@@ -15,11 +15,13 @@ Set CARSTASH_MEDIA_SERVER in the environment before starting:
   plex | jellyfin | emby | kodi | none
 """
 
+
 import os
 import shutil
 import logging
 from pathlib import Path
 from flask import Flask, jsonify, request, abort
+from functools import wraps
 from media_servers import get_adapter, SUPPORTED_SERVERS
 
 logging.basicConfig(
@@ -28,9 +30,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+os.makedirs(MEDIA_DIR, exist_ok=True)
+
+# ── Config ─────────────────────────────────────────────────────────────────────
 MEDIA_DIR      = os.environ.get("CARSTASH_MEDIA_DIR",  "/mnt/carstash/media")
 MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024 ** 3
+AUTH_TOKEN     = os.environ.get("CARSTASH_AUTH_TOKEN")
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
@@ -39,9 +44,23 @@ media_adapter = get_adapter()
 logger.info(f"Media server adapter: [{media_adapter.name}]")
 
 
+# ── Auth Decorator ─────────────────────────────────────────────────────────────
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if AUTH_TOKEN:
+            token = request.headers.get("X-CarStash-Token")
+            if not token or token != AUTH_TOKEN:
+                logger.warning("Unauthorized request: missing or invalid token")
+                abort(401, description="Unauthorized: missing or invalid token")
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/status", methods=["GET"])
+@require_auth
 def status():
     usage = shutil.disk_usage(MEDIA_DIR)
     files = _list_files()
@@ -59,6 +78,7 @@ def status():
 # ── Offset query (resume support) ─────────────────────────────────────────────
 
 @app.route("/api/receive/<filename>/offset", methods=["GET"])
+@require_auth
 def get_offset(filename):
     safe_name  = Path(filename).name
     final_path = os.path.join(MEDIA_DIR, safe_name)
@@ -76,6 +96,7 @@ def get_offset(filename):
 # ── File receiver ─────────────────────────────────────────────────────────────
 
 @app.route("/api/receive/<filename>", methods=["PUT"])
+@require_auth
 def receive_file(filename):
     if not filename.endswith(".mp4"):
         abort(400, description="Only .mp4 files accepted")
@@ -167,6 +188,7 @@ def receive_file(filename):
 # ── File list ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/files", methods=["GET"])
+@require_auth
 def list_files():
     return jsonify({"files": _list_files(), "media_dir": MEDIA_DIR})
 
@@ -174,6 +196,7 @@ def list_files():
 # ── Media server info ─────────────────────────────────────────────────────────
 
 @app.route("/api/media-server", methods=["GET"])
+@require_auth
 def media_server_info():
     """Return the active media server adapter and available options."""
     return jsonify({
