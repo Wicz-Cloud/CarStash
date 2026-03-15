@@ -1,0 +1,22 @@
+[Unit]
+Description=CarStash Client Agent
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/carstash/client/agent.py
+WorkingDirectory=/home/pi/carstash/client
+Restart=always
+RestartSec=10
+User=pi
+
+# Set your media server type and credentials here
+Environment=CARSTASH_MEDIA_SERVER=none
+Environment=CARSTASH_MEDIA_DIR=/mnt/carstash/media
+Environment=CARSTASH_MIN_FREE_GB=2
+Environment=MEDIA_SERVER_URL=
+Environment=MEDIA_SERVER_TOKEN=
+Environment=MEDIA_SERVER_SECTION=
+Environment=KODI_USER=kodi
+
+[Install]
+WantedBy=multi-user.target
