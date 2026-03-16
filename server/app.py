@@ -186,5 +186,13 @@ def system_status():
     })
 
 
+# ── Health check (used by CI smoke test) ─────────────────────────────────────
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Lightweight liveness probe — returns 200 as long as the server is up."""
+    return jsonify({"status": "ok", "service": "carstash-server"}), 200
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
