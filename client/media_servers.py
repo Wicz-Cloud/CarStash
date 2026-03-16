@@ -69,10 +69,12 @@ class PlexAdapter(MediaServerAdapter):
     """
     name = "plex"
 
-    def __init__(self, url: str, token: str, section: str = "1"):
-        self.url     = url.rstrip("/")
-        self.token   = token
+    def __init__(self, host: str, port: int = 32400, token: str = "", section: str = "1"):
+        self.host = host
+        self.port = port
+        self.token = token
         self.section = section
+        self.url = f"http://{host}:{port}"
 
     def refresh_library(self) -> bool:
         if not self.token:
@@ -86,6 +88,9 @@ class PlexAdapter(MediaServerAdapter):
         logger.warning(f"[plex] Refresh returned {resp.status_code if resp else 'no response'}")
         return False
 
+    def trigger_scan(self) -> bool:
+        return self.refresh_library()
+
 
 # ── Jellyfin ──────────────────────────────────────────────────────────────────
 
@@ -98,10 +103,12 @@ class JellyfinAdapter(MediaServerAdapter):
     """
     name = "jellyfin"
 
-    def __init__(self, url: str, token: str, section: str = ""):
-        self.url     = url.rstrip("/")
-        self.token   = token
-        self.section = section   # optional: specific library ID
+    def __init__(self, host: str, port: int = 8096, token: str = "", section: str = ""):
+        self.host = host
+        self.port = port
+        self.token = token
+        self.section = section
+        self.url = f"http://{host}:{port}"
 
     def refresh_library(self) -> bool:
         if not self.token:
@@ -126,6 +133,9 @@ class JellyfinAdapter(MediaServerAdapter):
         logger.warning(f"[jellyfin] Refresh returned {resp.status_code if resp else 'no response'}")
         return False
 
+    def trigger_scan(self) -> bool:
+        return self.refresh_library()
+
 
 # ── Emby ──────────────────────────────────────────────────────────────────────
 
@@ -138,10 +148,12 @@ class EmbyAdapter(MediaServerAdapter):
     """
     name = "emby"
 
-    def __init__(self, url: str, token: str, section: str = ""):
-        self.url     = url.rstrip("/")
-        self.token   = token
+    def __init__(self, host: str, port: int = 8096, token: str = "", section: str = ""):
+        self.host = host
+        self.port = port
+        self.token = token
         self.section = section
+        self.url = f"http://{host}:{port}"
 
     def refresh_library(self) -> bool:
         if not self.token:
@@ -165,6 +177,9 @@ class EmbyAdapter(MediaServerAdapter):
         logger.warning(f"[emby] Refresh returned {resp.status_code if resp else 'no response'}")
         return False
 
+    def trigger_scan(self) -> bool:
+        return self.refresh_library()
+
 
 # ── Kodi ─────────────────────────────────────────────────────────────────────
 
@@ -181,10 +196,12 @@ class KodiAdapter(MediaServerAdapter):
     """
     name = "kodi"
 
-    def __init__(self, url: str, username: str = "kodi", password: str = ""):
-        self.url      = url.rstrip("/")
+    def __init__(self, host: str, port: int = 8080, username: str = "kodi", password: str = ""):
+        self.host = host
+        self.port = port
         self.username = username
         self.password = password
+        self.url = f"http://{host}:{port}"
 
     def refresh_library(self) -> bool:
         endpoint = f"{self.url}/jsonrpc"
@@ -212,6 +229,9 @@ class KodiAdapter(MediaServerAdapter):
             logger.warning(f"[kodi] Refresh failed: {e}")
         return False
 
+    def trigger_scan(self) -> bool:
+        return self.refresh_library()
+
 
 # ── Null adapter (no media server) ───────────────────────────────────────────
 
@@ -226,6 +246,9 @@ class NullAdapter(MediaServerAdapter):
         logger.debug("[none] No media server configured — skipping library refresh")
         return True
 
+    def trigger_scan(self) -> bool:
+        return self.refresh_library()
+
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -237,23 +260,23 @@ DEFAULT_PORTS = {
 }
 
 
-def get_adapter() -> MediaServerAdapter:
+def get_adapter(name: str = None) -> MediaServerAdapter:
     """
-    Build the correct adapter from environment variables.
+    Build the correct adapter from environment variables or a provided name.
 
-    Required:
-      CARSTASH_MEDIA_SERVER   one of: plex | jellyfin | emby | kodi | none
+    Args:
+        name (str, optional): The media server type (e.g., 'plex', 'jellyfin').
+            If not provided, uses the CARSTASH_MEDIA_SERVER environment variable.
 
-    Optional (with sensible defaults):
-      MEDIA_SERVER_URL        e.g. http://192.168.1.x:8096  (overrides default port)
-      MEDIA_SERVER_TOKEN      API key / token
-      MEDIA_SERVER_SECTION    library section ID
-      KODI_USER               Kodi HTTP username (default: kodi)
+    Returns:
+        MediaServerAdapter: The appropriate adapter instance.
     """
-    server_type = os.environ.get("CARSTASH_MEDIA_SERVER", "none").lower().strip()
+    server_type = (name if name is not None else os.environ.get("CARSTASH_MEDIA_SERVER", "none")).lower().strip()
     token       = os.environ.get("MEDIA_SERVER_TOKEN",  "")
     section     = os.environ.get("MEDIA_SERVER_SECTION", "")
-    custom_url  = os.environ.get("MEDIA_SERVER_URL", "")
+    custom_host = os.environ.get("MEDIA_SERVER_HOST", "localhost")
+    custom_port = os.environ.get("MEDIA_SERVER_PORT", "")
+    kodi_user   = os.environ.get("KODI_USER", "kodi")
 
     if server_type not in ("plex", "jellyfin", "emby", "kodi", "none"):
         logger.warning(f"Unknown CARSTASH_MEDIA_SERVER '{server_type}' — defaulting to none")
@@ -263,20 +286,20 @@ def get_adapter() -> MediaServerAdapter:
         return NullAdapter()
 
     default_port = DEFAULT_PORTS[server_type]
-    url = custom_url or f"http://localhost:{default_port}"
+    port = int(custom_port) if custom_port else default_port
+    host = custom_host
 
     if server_type == "plex":
-        return PlexAdapter(url=url, token=token, section=section or "1")
+        return PlexAdapter(host=host, port=port, token=token, section=section or "1")
 
     if server_type == "jellyfin":
-        return JellyfinAdapter(url=url, token=token, section=section)
+        return JellyfinAdapter(host=host, port=port, token=token, section=section)
 
     if server_type == "emby":
-        return EmbyAdapter(url=url, token=token, section=section)
+        return EmbyAdapter(host=host, port=port, token=token, section=section)
 
     if server_type == "kodi":
-        kodi_user = os.environ.get("KODI_USER", "kodi")
-        return KodiAdapter(url=url, username=kodi_user, password=token)
+        return KodiAdapter(host=host, port=port, username=kodi_user, password=token)
 
     return NullAdapter()
 

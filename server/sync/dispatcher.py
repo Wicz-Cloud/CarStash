@@ -36,7 +36,7 @@ import os
 import requests
 from typing import Optional
 
-from sync.queue import SyncQueue, QueueItem
+from server.sync.queue import SyncQueue, QueueItem
 
 logger = logging.getLogger(__name__)
 
@@ -249,3 +249,56 @@ class HeartbeatPoller:
         except Exception as e:
             self.queue.set_state(item.id, "interrupted", error=str(e))
             logger.error(f"[{item.id}] Push failed: {e}")
+
+
+def is_pi_reachable(pi_ip: str, pi_port: int = 5001) -> bool:
+    """Standalone function for testability: returns True if Pi responds to /api/status."""
+    url = f"http://{pi_ip}:{pi_port}/api/status"
+    try:
+        resp = requests.get(url, timeout=5)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def get_pi_offset(pi_ip: str, dest_filename: str, pi_port: int = 5001) -> int:
+    """Standalone function to query the Pi for the current offset for a file."""
+    url = f"http://{pi_ip}:{pi_port}/api/receive/{dest_filename}/offset"
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            return int(resp.json().get("offset", 0))
+    except Exception:
+        pass
+    return 0
+
+
+def push_file(pi_ip: str, src_path: str, dest_filename: str, pi_port: int = 5001) -> bool:
+    """Standalone function to push a file to the Pi, resuming from the correct offset."""
+    file_size = os.path.getsize(src_path)
+    offset = get_pi_offset(pi_ip, dest_filename, pi_port)
+    remaining = file_size - offset
+    url = f"http://{pi_ip}:{pi_port}/api/receive/{dest_filename}"
+    try:
+        with open(src_path, "rb") as f:
+            f.seek(offset)
+            def _chunked_generator():
+                while True:
+                    chunk = f.read(STREAM_CHUNK)
+                    if not chunk:
+                        break
+                    yield chunk
+            resp = requests.put(
+                url,
+                data=_chunked_generator(),
+                headers={
+                    "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
+                    "Content-Length": str(remaining),
+                    "Content-Type": "application/octet-stream",
+                },
+                timeout=(PUSH_TIMEOUT, None),
+                stream=True,
+            )
+        return resp.status_code == 200
+    except Exception:
+        return False
