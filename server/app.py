@@ -29,8 +29,20 @@ MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
 MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024**3
 AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN")
 
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(MEDIA_DIR, exist_ok=True)
+
+def _ensure_dir(path, fallback_subdir):
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError:
+        fallback = os.path.join(tempfile.gettempdir(), fallback_subdir)
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+
+
+# Ensure log and media directories exist; fall back to temp dirs if /mnt isn't writable
+LOG_DIR = _ensure_dir(LOG_DIR, "carstash_logs")
+MEDIA_DIR = _ensure_dir(MEDIA_DIR, "carstash_media")
 
 app = Flask(__name__)
 CORS(app)

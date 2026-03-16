@@ -164,12 +164,15 @@ jobs:
           PI_IP: "192.168.1.99"
           SECRET_KEY: "ci-smoke-key"
           FLASK_ENV: testing
+          CARSTASH_LOG_DIR: ${{ runner.temp }}/carstash/logs
+          CARSTASH_MEDIA_DIR: ${{ runner.temp }}/carstash/media
         run: |
+          mkdir -p "$CARSTASH_LOG_DIR" "$CARSTASH_MEDIA_DIR"
           cd server
           python app.py > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
           # Give Flask extra time to bind
-          sleep 8
+          sleep 12
 
       - name: Output server log if health check fails
         if: failure()
