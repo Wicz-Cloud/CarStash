@@ -6,6 +6,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS
+from flask import send_from_directory
 
 try:
     from colorlog import ColoredFormatter
@@ -165,6 +166,10 @@ def health():
 @app.route("/api/queue", methods=["GET"])
 def list_queue():
     return jsonify([i.to_dict() for i in queue.items()])
+
+@app.route("/")
+def index():
+    return send_from_directory(os.path.dirname(__file__), "carstash.html")
 
 if __name__ == "__main__":
     app.run(host=os.environ.get("PLEXSYNC_SERVER_HOST", "127.0.0.1"), port=5000, debug=False)
