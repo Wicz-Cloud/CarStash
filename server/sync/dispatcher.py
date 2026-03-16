@@ -29,16 +29,17 @@ Resumable file push:
     - No bytes are re-sent, no re-transcode needed
 """
 
-import threading
-import time
 import logging
 import os
-import requests
-import urllib.parse
 import re
+import threading
+import time
+import urllib.parse
 from typing import Optional
 
-from server.sync.queue import SyncQueue, QueueItem
+import requests
+
+from server.sync.queue import QueueItem, SyncQueue
 
 logger = logging.getLogger(__name__)
 

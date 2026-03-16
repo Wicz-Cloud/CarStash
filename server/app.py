@@ -1,10 +1,11 @@
+import logging
 import os
 import shutil
 import tempfile
-import logging
-from flask import Flask, jsonify, request, abort
-from flask_cors import CORS
 from logging.handlers import TimedRotatingFileHandler
+
+from flask import Flask, abort, jsonify, request
+from flask_cors import CORS
 
 try:
     from colorlog import ColoredFormatter
@@ -14,10 +15,10 @@ except ImportError:
         pass
 
 
-from sync.worker import TranscodeWorker
 from sync.dispatcher import HeartbeatPoller
-from sync.transcode import probe, system_check
 from sync.queue import SyncQueue
+from sync.transcode import probe, system_check
+from sync.worker import TranscodeWorker
 
 STATE_FILE = os.environ.get("CARSTASH_STATE_FILE", os.path.join(tempfile.gettempdir(), "carstash_state.json"))
 CACHE_DIR = os.environ.get("CARSTASH_CACHE", os.path.join(tempfile.gettempdir(), "carstash_cache"))

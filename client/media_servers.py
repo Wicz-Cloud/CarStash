@@ -22,11 +22,12 @@ Configuration via environment variables:
 All adapters are best-effort — a failed refresh never fails the file receive.
 """
 
-import os
 import logging
-import requests
+import os
 from abc import ABC, abstractmethod
 from typing import Optional
+
+import requests
 
 logger = logging.getLogger(__name__)
 

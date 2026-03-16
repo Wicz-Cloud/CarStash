@@ -15,13 +15,14 @@ Set CARSTASH_MEDIA_SERVER in the environment before starting:
   plex | jellyfin | emby | kodi | none
 """
 
+import logging
 import os
 import shutil
-import logging
-from pathlib import Path
-from flask import Flask, jsonify, request, abort
 from functools import wraps
-from media_servers import get_adapter, SUPPORTED_SERVERS
+from pathlib import Path
+
+from flask import Flask, abort, jsonify, request
+from media_servers import SUPPORTED_SERVERS, get_adapter
 
 MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
 MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024**3

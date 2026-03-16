@@ -24,16 +24,16 @@ AUDIO:
   5.1 surround sources are downmixed. Stereo sources are passed through re-encoded.
 """
 
-import subprocess
-import shutil
 import json
-import os
-import threading
 import logging
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
-from typing import Optional, Callable
+import os
+import shutil
+import subprocess
+import threading
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 

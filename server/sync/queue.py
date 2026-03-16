@@ -11,14 +11,14 @@ State machine per item:
 """
 
 import json
-import uuid
-import threading
+import logging
 import os
 import tempfile
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+import threading
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
