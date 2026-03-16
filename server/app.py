@@ -9,8 +9,10 @@ from logging.handlers import TimedRotatingFileHandler
 try:
     from colorlog import ColoredFormatter
 except ImportError:
+
     class ColoredFormatter(logging.Formatter):
         pass
+
 
 from sync.worker import TranscodeWorker
 from sync.dispatcher import HeartbeatPoller
@@ -23,7 +25,7 @@ PI_IP = "127.0.0.1"
 PI_PORT = 5001
 LOG_DIR = os.environ.get("CARSTASH_LOG_DIR", "/mnt/carstash/logs")
 MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
-MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024 ** 3
+MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024**3
 AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN")
 
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -40,12 +42,12 @@ def setup_logging():
         "%(log_color)s%(asctime)s %(levelname)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'green',
-            'WARNING': 'yellow',
-            'ERROR': 'red',
-            'CRITICAL': 'bold_red',
-        }
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold_red",
+        },
     )
     handler.setFormatter(formatter)
     root_logger = logging.getLogger()
@@ -64,9 +66,7 @@ poller = HeartbeatPoller(
     queue=queue,
     pi_ip=PI_IP,
     pi_port=PI_PORT,
-    on_status_change=lambda reachable: logger.info(
-        f"Pi {'ONLINE ✓' if reachable else 'OFFLINE ✗'}"
-    ),
+    on_status_change=lambda reachable: logger.info(f"Pi {'ONLINE ✓' if reachable else 'OFFLINE ✗'}"),
 )
 
 
@@ -96,12 +96,14 @@ def browse():
         entries = []
         with os.scandir(path) as it:
             for e in sorted(it, key=lambda x: (not x.is_dir(), x.name.lower())):
-                entries.append({
-                    "name": e.name,
-                    "path": e.path,
-                    "is_dir": e.is_dir(follow_symlinks=False),
-                    "size": e.stat().st_size if e.is_file() else 0,
-                })
+                entries.append(
+                    {
+                        "name": e.name,
+                        "path": e.path,
+                        "is_dir": e.is_dir(follow_symlinks=False),
+                        "size": e.stat().st_size if e.is_file() else 0,
+                    }
+                )
         return jsonify({"path": path, "entries": entries})
     except PermissionError:
         abort(403)
@@ -124,19 +126,21 @@ def probe_file():
 @app.route("/api/system", methods=["GET"])
 def system_status():
     disk = shutil.disk_usage("/")
-    return jsonify({
-        "pi_reachable": poller.pi_reachable,
-        "pi_ip": PI_IP,
-        "pi_free_bytes": poller.pi_free_bytes,
-        "transcode_system": system_check(),
-        "server_disk": {
-            "total": disk.total,
-            "used": disk.used,
-            "free": disk.free,
-            "pct": round(disk.used / disk.total * 100, 1),
-        },
-        "current_transcode": worker.current_item_id,
-    })
+    return jsonify(
+        {
+            "pi_reachable": poller.pi_reachable,
+            "pi_ip": PI_IP,
+            "pi_free_bytes": poller.pi_free_bytes,
+            "transcode_system": system_check(),
+            "server_disk": {
+                "total": disk.total,
+                "used": disk.used,
+                "free": disk.free,
+                "pct": round(disk.used / disk.total * 100, 1),
+            },
+            "current_transcode": worker.current_item_id,
+        }
+    )
 
 
 # ── Health check (used by CI smoke test) ─────────────────────────────────────

@@ -54,7 +54,7 @@ class HeartbeatPoller:
         queue: SyncQueue,
         pi_ip: str,
         pi_port: int = 5001,
-        on_status_change=None,    # callback(reachable: bool)
+        on_status_change=None,  # callback(reachable: bool)
     ):
         self.queue = queue
         self.pi_ip = pi_ip
@@ -119,10 +119,7 @@ class HeartbeatPoller:
             return
 
         if item.push_attempts >= MAX_ATTEMPTS:
-            self.queue.set_state(
-                item.id, "failed",
-                error=f"Exceeded {MAX_ATTEMPTS} push attempts"
-            )
+            self.queue.set_state(item.id, "failed", error=f"Exceeded {MAX_ATTEMPTS} push attempts")
             logger.error(f"[{item.id}] Giving up after {MAX_ATTEMPTS} attempts")
             return
 
@@ -171,10 +168,7 @@ class HeartbeatPoller:
         """
         path = item.transcoded_path
         if not path or not os.path.exists(path):
-            self.queue.set_state(
-                item.id, "failed",
-                error="Transcoded file missing on server"
-            )
+            self.queue.set_state(item.id, "failed", error="Transcoded file missing on server")
             return
 
         file_size = os.path.getsize(path)
@@ -208,8 +202,7 @@ class HeartbeatPoller:
         # URL-encode filename
         safe_name = urllib.parse.quote(str(item.dest_filename), safe="")
         url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}"
-        self.queue.set_state(item.id, "pushing",
-                             push_attempts=item.push_attempts + 1)
+        self.queue.set_state(item.id, "pushing", push_attempts=item.push_attempts + 1)
 
         try:
             with open(path, "rb") as f:
@@ -236,18 +229,18 @@ class HeartbeatPoller:
                     return re.sub(r"[\r\n]+", " ", str(v))[:200]
 
                 headers = {
-                    "Content-Range":  f"bytes {offset}-{file_size - 1}/{file_size}",
+                    "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
                     "Content-Length": str(remaining),
-                    "Content-Type":   "application/octet-stream",
-                    "X-Item-Id":      _sanitize_header(item.id),
-                    "X-Item-Name":    _sanitize_header(item.name),
+                    "Content-Type": "application/octet-stream",
+                    "X-Item-Id": _sanitize_header(item.id),
+                    "X-Item-Name": _sanitize_header(item.name),
                 }
 
                 resp = requests.put(
                     url,
                     data=_chunked_generator(),
                     headers=headers,
-                    timeout=(PUSH_TIMEOUT, None),   # (connect_timeout, read_timeout=unlimited)
+                    timeout=(PUSH_TIMEOUT, None),  # (connect_timeout, read_timeout=unlimited)
                     stream=True,
                 )
 
@@ -260,8 +253,7 @@ class HeartbeatPoller:
         except requests.exceptions.ConnectionError:
             # Pi went away mid-transfer — its .tmp file has however many bytes arrived.
             # Next heartbeat will query the offset again and resume from there.
-            self.queue.set_state(item.id, "interrupted",
-                                 error="Connection lost mid-transfer — will resume")
+            self.queue.set_state(item.id, "interrupted", error="Connection lost mid-transfer — will resume")
             logger.warning(f"[{item.id}] Connection lost mid-push — will resume next heartbeat")
 
         except Exception as e:

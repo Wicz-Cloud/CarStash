@@ -31,16 +31,16 @@ STATES = ("queued", "transcoding", "ready", "pushing", "done", "failed", "interr
 @dataclass
 class QueueItem:
     id: str
-    source_path: str               # absolute path on server
-    name: str                      # display name
-    dest_filename: str             # filename to use on Pi (always .mp4)
+    source_path: str  # absolute path on server
+    name: str  # display name
+    dest_filename: str  # filename to use on Pi (always .mp4)
     quality: str = "balanced"
     state: str = "queued"
-    priority: int = 0              # higher = pushed first
-    transcoded_path: Optional[str] = None   # server-side optimized file
+    priority: int = 0  # higher = pushed first
+    transcoded_path: Optional[str] = None  # server-side optimized file
     size_bytes: int = 0
     push_attempts: int = 0
-    push_progress: float = 0.0     # 0.0–100.0 during active push
+    push_progress: float = 0.0  # 0.0–100.0 during active push
     error: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -65,11 +65,13 @@ class SyncQueue:
                     status = "pending"
                 elif status == "pushing":
                     status = "transferring"
-                result.append({
-                    "id": item.id,
-                    "filename": getattr(item, "dest_filename", getattr(item, "name", "")),
-                    "status": status,
-                })
+                result.append(
+                    {
+                        "id": item.id,
+                        "filename": getattr(item, "dest_filename", getattr(item, "name", "")),
+                        "status": status,
+                    }
+                )
             return result
 
     def set_status(self, item_id: str, status: str, **kwargs):
@@ -115,15 +117,14 @@ class SyncQueue:
                 os.chmod(tmp, 0o600)
             except Exception:
                 pass
-            os.replace(tmp, self.state_path)   # atomic write
+            os.replace(tmp, self.state_path)  # atomic write
         finally:
             # If replace failed leave a clear error but don't attempt to unlink here
             pass
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def add(self, source_path: str, name: str, quality: str = "balanced",
-            priority: int = 0) -> QueueItem:
+    def add(self, source_path: str, name: str, quality: str = "balanced", priority: int = 0) -> QueueItem:
         with self._lock:
             item_id = str(uuid.uuid4())[:8]
             basename = os.path.splitext(os.path.basename(source_path))[0]
@@ -151,14 +152,12 @@ class SyncQueue:
 
     def list_all(self) -> list[QueueItem]:
         with self._lock:
-            return sorted(self._items.values(),
-                          key=lambda i: (-i.priority, i.created_at))
+            return sorted(self._items.values(), key=lambda i: (-i.priority, i.created_at))
 
     def next_to_transcode(self) -> Optional[QueueItem]:
         """Return highest-priority item still needing transcoding."""
         with self._lock:
-            candidates = [i for i in self._items.values()
-                          if i.state == "queued"]
+            candidates = [i for i in self._items.values() if i.state == "queued"]
             if not candidates:
                 return None
             return max(candidates, key=lambda i: i.priority)
@@ -166,8 +165,7 @@ class SyncQueue:
     def next_to_push(self) -> Optional[QueueItem]:
         """Return highest-priority item ready to push (or interrupted last time)."""
         with self._lock:
-            candidates = [i for i in self._items.values()
-                          if i.state in ("ready", "interrupted")]
+            candidates = [i for i in self._items.values() if i.state in ("ready", "interrupted")]
             if not candidates:
                 return None
             return max(candidates, key=lambda i: (i.priority, i.push_attempts == 0))

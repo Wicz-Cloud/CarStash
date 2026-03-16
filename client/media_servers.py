@@ -30,10 +30,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 8   # seconds for all media server API calls
+TIMEOUT = 8  # seconds for all media server API calls
 
 
 # ── Base adapter ──────────────────────────────────────────────────────────────
+
 
 class MediaServerAdapter(ABC):
     name: str = "base"
@@ -60,6 +61,7 @@ class MediaServerAdapter(ABC):
 
 # ── Plex ──────────────────────────────────────────────────────────────────────
 
+
 class PlexAdapter(MediaServerAdapter):
     """
     Plex Media Server
@@ -67,6 +69,7 @@ class PlexAdapter(MediaServerAdapter):
     Auth: X-Plex-Token header
     Refresh endpoint: GET /library/sections/{section}/refresh
     """
+
     name = "plex"
 
     def __init__(self, host: str, port: int = 32400, token: str = "", section: str = "1"):
@@ -94,6 +97,7 @@ class PlexAdapter(MediaServerAdapter):
 
 # ── Jellyfin ──────────────────────────────────────────────────────────────────
 
+
 class JellyfinAdapter(MediaServerAdapter):
     """
     Jellyfin Media Server
@@ -101,6 +105,7 @@ class JellyfinAdapter(MediaServerAdapter):
     Auth: ?api_key=TOKEN query param (or X-Emby-Token header)
     Refresh endpoint: POST /Library/Refresh
     """
+
     name = "jellyfin"
 
     def __init__(self, host: str, port: int = 8096, token: str = "", section: str = ""):
@@ -120,8 +125,9 @@ class JellyfinAdapter(MediaServerAdapter):
         if self.section:
             # Refresh a specific library folder by ID
             endpoint = f"{self.url}/Items/{self.section}/Refresh"
-            resp = self._safe_post(endpoint, headers=headers,
-                                   params={"Recursive": "true", "ImageRefreshMode": "Default"})
+            resp = self._safe_post(
+                endpoint, headers=headers, params={"Recursive": "true", "ImageRefreshMode": "Default"}
+            )
         else:
             # Refresh all libraries
             endpoint = f"{self.url}/Library/Refresh"
@@ -139,6 +145,7 @@ class JellyfinAdapter(MediaServerAdapter):
 
 # ── Emby ──────────────────────────────────────────────────────────────────────
 
+
 class EmbyAdapter(MediaServerAdapter):
     """
     Emby Media Server
@@ -146,6 +153,7 @@ class EmbyAdapter(MediaServerAdapter):
     Auth: api_key query param (same API shape as Jellyfin — they share heritage)
     Refresh endpoint: POST /Library/Refresh
     """
+
     name = "emby"
 
     def __init__(self, host: str, port: int = 8096, token: str = "", section: str = ""):
@@ -165,8 +173,7 @@ class EmbyAdapter(MediaServerAdapter):
 
         if self.section:
             endpoint = f"{self.url}/Items/{self.section}/Refresh"
-            resp = self._safe_post(endpoint, headers=headers,
-                                   params={**params, "Recursive": "true"})
+            resp = self._safe_post(endpoint, headers=headers, params={**params, "Recursive": "true"})
         else:
             endpoint = f"{self.url}/Library/Refresh"
             resp = self._safe_post(endpoint, headers=headers, params=params)
@@ -183,6 +190,7 @@ class EmbyAdapter(MediaServerAdapter):
 
 # ── Kodi ─────────────────────────────────────────────────────────────────────
 
+
 class KodiAdapter(MediaServerAdapter):
     """
     Kodi (XBMC) via HTTP JSON-RPC API
@@ -194,6 +202,7 @@ class KodiAdapter(MediaServerAdapter):
     Kodi HTTP must be enabled:
       Settings → Services → Control → Allow remote control via HTTP
     """
+
     name = "kodi"
 
     def __init__(self, host: str, port: int = 8080, username: str = "kodi", password: str = ""):
@@ -207,7 +216,7 @@ class KodiAdapter(MediaServerAdapter):
         endpoint = f"{self.url}/jsonrpc"
         payload = {
             "jsonrpc": "2.0",
-            "method":  "VideoLibrary.Scan",
+            "method": "VideoLibrary.Scan",
             "id": 1,
         }
         auth = (self.username, self.password) if self.password else None
@@ -235,11 +244,13 @@ class KodiAdapter(MediaServerAdapter):
 
 # ── Null adapter (no media server) ───────────────────────────────────────────
 
+
 class NullAdapter(MediaServerAdapter):
     """
     No media server configured. Files are stored; user points their player manually.
     Refresh is a no-op.
     """
+
     name = "none"
 
     def refresh_library(self) -> bool:
@@ -253,10 +264,10 @@ class NullAdapter(MediaServerAdapter):
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 DEFAULT_PORTS = {
-    "plex":     32400,
+    "plex": 32400,
     "jellyfin": 8096,
-    "emby":     8096,
-    "kodi":     8080,
+    "emby": 8096,
+    "kodi": 8080,
 }
 
 

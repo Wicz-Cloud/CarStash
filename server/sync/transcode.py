@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ─── Constants locked to this hardware ───────────────────────────────────────
 
 PI_MODEL = "Pi 3B"
-SCREEN = "2024 Honda Odyssey 12.8\" "  # Added space for E261
+SCREEN = '2024 Honda Odyssey 12.8" '  # Added space for E261
 TARGET_WIDTH = 1280
 TARGET_HEIGHT = 720
 ENCODER = "libx264"
@@ -63,16 +63,17 @@ QUALITY_PRESETS = {
 
 # ─── Data classes ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TranscodeJob:
     job_id: str
     input_path: str
     output_path: str
     quality: str = "balanced"
-    status: str = "queued"        # queued | probing | encoding | done | error | skipped
-    progress: float = 0.0         # 0.0 – 100.0
-    fps_current: float = 0.0      # live encode speed
-    speed_x: float = 0.0          # e.g. 1.5 = 1.5x realtime
+    status: str = "queued"  # queued | probing | encoding | done | error | skipped
+    progress: float = 0.0  # 0.0 – 100.0
+    fps_current: float = 0.0  # live encode speed
+    speed_x: float = 0.0  # e.g. 1.5 = 1.5x realtime
     eta_seconds: Optional[int] = None
     input_info: dict = field(default_factory=dict)
     output_size_bytes: int = 0
@@ -90,6 +91,7 @@ class TranscodeJob:
 @dataclass
 class MediaInfo:
     """Parsed ffprobe output for a file."""
+
     path: str
     duration_seconds: float
     video_codec: str
@@ -100,7 +102,7 @@ class MediaInfo:
     audio_codec: str
     audio_channels: int
     size_bytes: int
-    is_already_compatible: bool   # True = skip transcode
+    is_already_compatible: bool  # True = skip transcode
     skip_reason: Optional[str] = None
 
     def to_dict(self):
@@ -108,6 +110,7 @@ class MediaInfo:
 
 
 # ─── ffprobe helpers ──────────────────────────────────────────────────────────
+
 
 def probe(path: str) -> MediaInfo:
     """
@@ -123,12 +126,7 @@ def probe(path: str) -> MediaInfo:
         raise RuntimeError("Invalid path")
     path = os.path.abspath(path)
 
-    cmd = [
-        ffprobe, "-v", "quiet",
-        "-print_format", "json",
-        "-show_streams", "-show_format",
-        path
-    ]
+    cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", path]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {result.stderr.strip()}")
@@ -206,6 +204,7 @@ def _check_compatible(vcodec, width, height, fps, acodec, achannels, fmt) -> Opt
 
 
 # ─── Transcode engine ─────────────────────────────────────────────────────────
+
 
 class Transcoder:
     def __init__(self):
@@ -372,33 +371,45 @@ class Transcoder:
 
         cmd = [
             ffmpeg,
-            "-i", input_path,
-            "-y",                          # overwrite output without asking
-
+            "-i",
+            input_path,
+            "-y",  # overwrite output without asking
             # ── Video ──
-            "-c:v", ENCODER,
-            "-crf", str(crf),
-            "-preset", preset,
-            "-profile:v", PROFILE,         # H.264 main — Chromium safe
-            "-level", LEVEL,               # 3.1 = safe for 720p30
-            "-pix_fmt", PIX_FMT,           # yuv420p required for compatibility
-            "-vf", ",".join(vf_filters),
-
+            "-c:v",
+            ENCODER,
+            "-crf",
+            str(crf),
+            "-preset",
+            preset,
+            "-profile:v",
+            PROFILE,  # H.264 main — Chromium safe
+            "-level",
+            LEVEL,  # 3.1 = safe for 720p30
+            "-pix_fmt",
+            PIX_FMT,  # yuv420p required for compatibility
+            "-vf",
+            ",".join(vf_filters),
             # ── Audio ──
-            "-c:a", AUDIO_CODEC,
-            "-b:a", AUDIO_BITRATE,
-            "-ac", str(AUDIO_CHANNELS),    # force stereo downmix
-            "-ar", "48000",                # 48kHz sample rate (AAC standard)
-
+            "-c:a",
+            AUDIO_CODEC,
+            "-b:a",
+            AUDIO_BITRATE,
+            "-ac",
+            str(AUDIO_CHANNELS),  # force stereo downmix
+            "-ar",
+            "48000",  # 48kHz sample rate (AAC standard)
             # ── Container / seeking ──
-            "-movflags", "+faststart",     # move moov atom to front for Plex streaming
-            "-f", CONTAINER,
-
+            "-movflags",
+            "+faststart",  # move moov atom to front for Plex streaming
+            "-f",
+            CONTAINER,
             # ── Progress ──
-            "-progress", "pipe:1",         # write progress stats to stdout
-            "-stats_period", "1",          # update every second
-            "-v", "warning",               # suppress verbose output
-
+            "-progress",
+            "pipe:1",  # write progress stats to stdout
+            "-stats_period",
+            "1",  # update every second
+            "-v",
+            "warning",  # suppress verbose output
             output_path,
         ]
 
@@ -469,6 +480,7 @@ class Transcoder:
 
 # ─── Batch helper (used by SyncEngine integration) ────────────────────────────
 
+
 def transcode_folder(
     source_dir: str,
     dest_dir: str,
@@ -488,10 +500,7 @@ def transcode_folder(
     dest = Path(dest_dir)
     jobs = []
 
-    video_files = [
-        f for f in source.rglob("*")
-        if f.is_file() and f.suffix.lower() in extensions
-    ]
+    video_files = [f for f in source.rglob("*") if f.is_file() and f.suffix.lower() in extensions]
 
     if not video_files:
         logger.info(f"No video files found in {source_dir}")
@@ -532,6 +541,7 @@ def transcode_folder(
 
 # ─── Capability check (called on startup / API) ───────────────────────────────
 
+
 def system_check() -> dict:
     """Return a summary of transcoding capability on this system."""
     ffmpeg = shutil.which("ffmpeg")
@@ -551,10 +561,7 @@ def system_check() -> dict:
         "encoder": ENCODER,
         "target_resolution": f"{TARGET_WIDTH}x{TARGET_HEIGHT}",
         "target_screen": SCREEN,
-        "quality_presets": {
-            k: {"crf": v[0], "preset": v[1], "description": v[2]}
-            for k, v in QUALITY_PRESETS.items()
-        },
+        "quality_presets": {k: {"crf": v[0], "preset": v[1], "description": v[2]} for k, v in QUALITY_PRESETS.items()},
         "notes": [
             "Pi 3B uses software libx264 — one file at a time, ~20-25fps encode speed at 720p",
             "Files already in H.264/AAC/MP4 at ≤720p are skipped automatically",

@@ -15,7 +15,6 @@ Set CARSTASH_MEDIA_SERVER in the environment before starting:
   plex | jellyfin | emby | kodi | none
 """
 
-
 import os
 import shutil
 import logging
@@ -24,9 +23,8 @@ from flask import Flask, jsonify, request, abort
 from functools import wraps
 from media_servers import get_adapter, SUPPORTED_SERVERS
 
-
 MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
-MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024 ** 3
+MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024**3
 AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN")
 
 logging.basicConfig(
@@ -51,28 +49,33 @@ def require_auth(f):
                 logger.warning("Unauthorized request: missing or invalid token")
                 abort(401, description="Unauthorized: missing or invalid token")
         return f(*args, **kwargs)
+
     return decorated
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/status", methods=["GET"])
 @require_auth
 def status():
     usage = shutil.disk_usage(MEDIA_DIR)
     files = _list_files()
-    return jsonify({
-        "ok": True,
-        "media_server": media_adapter.name,
-        "free_bytes": usage.free,
-        "used_bytes": usage.used,
-        "total_bytes": usage.total,
-        "file_count": len(files),
-        "media_dir": MEDIA_DIR,
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "media_server": media_adapter.name,
+            "free_bytes": usage.free,
+            "used_bytes": usage.used,
+            "total_bytes": usage.total,
+            "file_count": len(files),
+            "media_dir": MEDIA_DIR,
+        }
+    )
 
 
 # ── Offset query (resume support) ─────────────────────────────────────────────
+
 
 @app.route("/api/receive/<filename>/offset", methods=["GET"])
 @require_auth
@@ -91,6 +94,7 @@ def get_offset(filename):
 
 
 # ── File receiver ─────────────────────────────────────────────────────────────
+
 
 @app.route("/api/receive/<filename>", methods=["PUT"])
 @require_auth
@@ -128,8 +132,7 @@ def receive_file(filename):
         existing = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else 0
         if existing != offset:
             logger.warning(
-                f"Offset mismatch for {safe_name}: "
-                f"server says {offset}, we have {existing} — restarting transfer"
+                f"Offset mismatch for {safe_name}: " f"server says {offset}, we have {existing} — restarting transfer"
             )
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -152,13 +155,15 @@ def receive_file(filename):
         if total_size > 0 and tmp_size < total_size:
             # More data expected in a future push
             logger.info(f"Partial receive: {tmp_size / 1e6:.1f} / {total_size / 1e6:.1f} MB")
-            return jsonify({
-                "ok":            True,
-                "complete":      False,
-                "bytes_written": bytes_written,
-                "bytes_on_disk": tmp_size,
-                "total_size":    total_size,
-            })
+            return jsonify(
+                {
+                    "ok": True,
+                    "complete": False,
+                    "bytes_written": bytes_written,
+                    "bytes_on_disk": tmp_size,
+                    "total_size": total_size,
+                }
+            )
 
         # Complete — atomically promote
         os.replace(tmp_path, final_path)
@@ -172,17 +177,20 @@ def receive_file(filename):
     # ── Trigger media server refresh ──────────────────────────────────────────
     media_adapter.refresh_library()
 
-    return jsonify({
-        "ok": True,
-        "complete": True,
-        "filename": safe_name,
-        "bytes_written": bytes_written,
-        "path": final_path,
-        "media_server": media_adapter.name,
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "complete": True,
+            "filename": safe_name,
+            "bytes_written": bytes_written,
+            "path": final_path,
+            "media_server": media_adapter.name,
+        }
+    )
 
 
 # ── File list ─────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/files", methods=["GET"])
 @require_auth
@@ -192,17 +200,21 @@ def list_files():
 
 # ── Media server info ─────────────────────────────────────────────────────────
 
+
 @app.route("/api/media-server", methods=["GET"])
 @require_auth
 def media_server_info():
     """Return the active media server adapter and available options."""
-    return jsonify({
-        "active":    media_adapter.name,
-        "supported": SUPPORTED_SERVERS,
-    })
+    return jsonify(
+        {
+            "active": media_adapter.name,
+            "supported": SUPPORTED_SERVERS,
+        }
+    )
 
 
 # ── LRU eviction ─────────────────────────────────────────────────────────────
+
 
 def _evict_if_needed(needed_bytes: int):
     required = needed_bytes + MIN_FREE_BYTES
@@ -225,16 +237,19 @@ def _list_files() -> list[dict]:
     for p in Path(MEDIA_DIR).rglob("*.mp4"):
         if p.is_file() and not p.name.endswith(".tmp"):
             stat = p.stat()
-            files.append({
-                "name": p.name,
-                "path": str(p),
-                "size": stat.st_size,
-                "mtime": stat.st_mtime,
-            })
+            files.append(
+                {
+                    "name": p.name,
+                    "path": str(p),
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                }
+            )
     return files
 
 
 if __name__ == "__main__":
     # Use environment variable for host, default to 127.0.0.1 for safety
     import os
+
     app.run(host=os.environ.get("CARSTASH_AGENT_HOST", "127.0.0.1"), port=5001, debug=False)
