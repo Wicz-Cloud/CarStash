@@ -8,6 +8,12 @@ Starts the transcode worker and heartbeat poller as background threads.
 import os
 import shutil
 import logging
+from logging.handlers import TimedRotatingFileHandler
+try:
+    import colorlog
+    COLORLOG_AVAILABLE = True
+except ImportError:
+    COLORLOG_AVAILABLE = False
 from flask import Flask, jsonify, request, render_template, abort
 
 from sync.queue import SyncQueue
@@ -15,15 +21,37 @@ from sync.worker import TranscodeWorker
 from sync.dispatcher import HeartbeatPoller
 from sync.transcode import probe, system_check, QUALITY_PRESETS
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s %(levelname)s %(name)s — %(message)s")
-logger = logging.getLogger(__name__)
+
+# Modern logging setup: color, rotation, rich format
+LOG_FORMAT = "%(asctime)s %(log_color)s%(levelname)-8s%(reset)s %(name)s — %(message)s"
+PLAIN_FORMAT = "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
+
+log_handlers = []
+
+# Console handler with color if available
+if COLORLOG_AVAILABLE:
+    console_handler = colorlog.StreamHandler()
+    console_handler.setFormatter(colorlog.ColoredFormatter(LOG_FORMAT))
+else:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(PLAIN_FORMAT))
+log_handlers.append(console_handler)
+
+# Rotating file handler (daily, keep 7 days)
+file_handler = TimedRotatingFileHandler("plexsync.log", when="midnight", backupCount=7, encoding="utf-8")
+file_handler.setFormatter(logging.Formatter(PLAIN_FORMAT))
+log_handlers.append(file_handler)
+
+logging.basicConfig(level=logging.INFO, handlers=log_handlers)
+logger = logging.getLogger("plexsync")
 
 # ── Config from env ───────────────────────────────────────────────────────────
-PI_IP       = os.environ.get("PI_IP",       "192.168.1.100")
-PI_PORT     = int(os.environ.get("PI_PORT", "5001"))
-STATE_FILE  = os.environ.get("PLEXSYNC_STATE", "queue_state.json")
-CACHE_DIR   = os.environ.get("PLEXSYNC_CACHE", "/tmp/plexsync_cache")
+PI_IP = os.environ.get("PI_IP", "192.168.1.100")
+PI_PORT = int(os.environ.get("PI_PORT", "5001"))
+STATE_FILE = os.environ.get("PLEXSYNC_STATE", "queue_state.json")
+import tempfile
+# Use system temp dir as default for cache, not hardcoded /tmp
+CACHE_DIR = os.environ.get("PLEXSYNC_CACHE", os.path.join(tempfile.gettempdir(), "plexsync_cache"))
 
 # ── App + services ────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -42,7 +70,6 @@ poller = HeartbeatPoller(
 @app.before_request
 def _start_services():
     """Start background threads on first request (avoids issues with Flask reloader)."""
-    global _started
     if not globals().get("_started"):
         worker.start()
         poller.start()
@@ -195,4 +222,6 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # Use environment variable for host, default to 127.0.0.1 for safety
+    import os
+    app.run(host=os.environ.get("PLEXSYNC_SERVER_HOST", "127.0.0.1"), port=5000, debug=False)

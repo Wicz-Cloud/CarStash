@@ -19,17 +19,20 @@ from pathlib import Path
 from typing import Optional
 
 from sync.queue import SyncQueue
-from sync.transcode import Transcoder, probe, QUALITY_PRESETS
+from sync.transcode import Transcoder, probe
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR   = os.environ.get("PLEXSYNC_CACHE", "/tmp/plexsync_cache")
-POLL_SLEEP  = 5     # seconds to wait between queue checks when idle
+import tempfile
+# Use system temp dir as default for cache, not hardcoded /tmp
+CACHE_DIR = os.environ.get("PLEXSYNC_CACHE", os.path.join(tempfile.gettempdir(), "plexsync_cache"))
+POLL_SLEEP = 5  # seconds to wait between queue checks when idle
 
 
 def _cache_key(source_path: str, quality: str) -> str:
     """Stable filename for a transcoded file in the cache."""
-    h = hashlib.md5(f"{source_path}:{quality}".encode()).hexdigest()[:12]
+    # Use SHA-256 for cache key (not for security, just uniqueness)
+    h = hashlib.sha256(f"{source_path}:{quality}".encode()).hexdigest()[:12]
     stem = Path(source_path).stem
     return f"{stem}_{h}.mp4"
 

@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-MEDIA_DIR      = os.environ.get("CARSTASH_MEDIA_DIR",  "/mnt/carstash/media")
+MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
 MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024 ** 3
-AUTH_TOKEN     = os.environ.get("CARSTASH_AUTH_TOKEN")
+AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN")
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
@@ -238,4 +238,6 @@ def _list_files() -> list[dict]:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    # Use environment variable for host, default to 127.0.0.1 for safety
+    import os
+    app.run(host=os.environ.get("CARSTASH_AGENT_HOST", "127.0.0.1"), port=5001, debug=False)

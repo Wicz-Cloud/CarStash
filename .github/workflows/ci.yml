@@ -166,10 +166,14 @@ jobs:
           FLASK_ENV: testing
         run: |
           cd server
-          python app.py &
+          python app.py > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
-          # Give Flask a moment to bind
-          sleep 3
+          # Give Flask extra time to bind
+          sleep 8
+
+      - name: Output server log if health check fails
+        if: failure()
+        run: cat /tmp/server.log
 
       - name: Health check — server responds
         run: |

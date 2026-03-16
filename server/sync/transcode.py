@@ -27,7 +27,6 @@ AUDIO:
 import subprocess
 import shutil
 import json
-import re
 import os
 import threading
 import logging
