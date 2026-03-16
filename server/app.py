@@ -17,10 +17,8 @@ from sync.dispatcher import HeartbeatPoller
 from sync.transcode import probe, system_check
 from sync.queue import SyncQueue
 
-STATE_FILE = os.environ.get("CARSTASH_STATE_FILE",
-                          os.path.join(tempfile.gettempdir(), "carstash_state.json"))
-CACHE_DIR = os.environ.get("CARSTASH_CACHE",
-                          os.path.join(tempfile.gettempdir(), "carstash_cache"))
+STATE_FILE = os.environ.get("CARSTASH_STATE_FILE", os.path.join(tempfile.gettempdir(), "carstash_state.json"))
+CACHE_DIR = os.environ.get("CARSTASH_CACHE", os.path.join(tempfile.gettempdir(), "carstash_cache"))
 PI_IP = "127.0.0.1"
 PI_PORT = 5001
 LOG_DIR = os.environ.get("CARSTASH_LOG_DIR", "/mnt/carstash/logs")

@@ -118,6 +118,11 @@ def probe(path: str) -> MediaInfo:
     if not ffprobe:
         raise RuntimeError("ffprobe not found — install ffmpeg: sudo apt install ffmpeg")
 
+    # Basic path validation
+    if "\x00" in path:
+        raise RuntimeError("Invalid path")
+    path = os.path.abspath(path)
+
     cmd = [
         ffprobe, "-v", "quiet",
         "-print_format", "json",
@@ -344,6 +349,12 @@ class Transcoder:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise RuntimeError("ffmpeg not found — sudo apt install ffmpeg")
+
+        # Validate paths
+        if "\x00" in input_path or "\x00" in output_path:
+            raise RuntimeError("Invalid path")
+        input_path = os.path.abspath(input_path)
+        output_path = os.path.abspath(output_path)
 
         crf, preset, _ = QUALITY_PRESETS[quality]
 

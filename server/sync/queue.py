@@ -14,6 +14,7 @@ import json
 import uuid
 import threading
 import os
+import tempfile
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 from datetime import datetime
@@ -103,10 +104,21 @@ class SyncQueue:
 
     def _save(self):
         data = {"items": [i.to_dict() for i in self._items.values()]}
-        tmp = self.state_path + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, self.state_path)   # atomic write
+        # Write to a secure temporary file in the same directory, then atomically replace.
+        state_dir = os.path.dirname(self.state_path) or "."
+        with tempfile.NamedTemporaryFile(mode="w", dir=state_dir, delete=False) as tf:
+            tmp = tf.name
+            json.dump(data, tf, indent=2)
+        try:
+            # Restrict permissions on the temp file
+            try:
+                os.chmod(tmp, 0o600)
+            except Exception:
+                pass
+            os.replace(tmp, self.state_path)   # atomic write
+        finally:
+            # If replace failed leave a clear error but don't attempt to unlink here
+            pass
 
     # ── Public API ────────────────────────────────────────────────────────────
 

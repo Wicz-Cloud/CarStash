@@ -34,6 +34,8 @@ import time
 import logging
 import os
 import requests
+import urllib.parse
+import re
 from typing import Optional
 
 from server.sync.queue import SyncQueue, QueueItem
@@ -144,7 +146,9 @@ class HeartbeatPoller:
         Returns 0 if the file doesn't exist yet (fresh transfer).
         Returns N if a .tmp partial file exists from a previous interrupted push.
         """
-        url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{filename}/offset"
+        # Ensure filename is safely encoded to avoid path injection
+        safe_name = urllib.parse.quote(str(filename), safe="")
+        url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}/offset"
         try:
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
@@ -201,7 +205,9 @@ class HeartbeatPoller:
                 f"need {remaining/1e9:.1f} GB — Pi will evict old files"
             )
 
-        url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{item.dest_filename}"
+        # URL-encode filename
+        safe_name = urllib.parse.quote(str(item.dest_filename), safe="")
+        url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}"
         self.queue.set_state(item.id, "pushing",
                              push_attempts=item.push_attempts + 1)
 
@@ -222,17 +228,25 @@ class HeartbeatPoller:
                         self.queue.update_push_progress(item.id, progress)
                         yield chunk
 
+                # Sanitize header values to avoid header injection
+                def _sanitize_header(v: str) -> str:
+                    if v is None:
+                        return ""
+                    # strip control/newline characters
+                    return re.sub(r"[\r\n]+", " ", str(v))[:200]
+
+                headers = {
+                    "Content-Range":  f"bytes {offset}-{file_size - 1}/{file_size}",
+                    "Content-Length": str(remaining),
+                    "Content-Type":   "application/octet-stream",
+                    "X-Item-Id":      _sanitize_header(item.id),
+                    "X-Item-Name":    _sanitize_header(item.name),
+                }
+
                 resp = requests.put(
                     url,
                     data=_chunked_generator(),
-                    headers={
-                        # Content-Range tells the Pi where in the file these bytes belong
-                        "Content-Range":  f"bytes {offset}-{file_size - 1}/{file_size}",
-                        "Content-Length": str(remaining),
-                        "Content-Type":   "application/octet-stream",
-                        "X-Item-Id":      item.id,
-                        "X-Item-Name":    item.name,
-                    },
+                    headers=headers,
                     timeout=(PUSH_TIMEOUT, None),   # (connect_timeout, read_timeout=unlimited)
                     stream=True,
                 )
