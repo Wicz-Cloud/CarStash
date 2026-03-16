@@ -1,6 +1,7 @@
 flask>=3.0
 requests>=2.31
 colorlog
+Flask-Cors
 
 # ffmpeg must be installed via system package manager:
 # sudo apt install ffmpeg
