@@ -1,0 +1,23 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["server", "client"]
+omit = ["tests/*", "*/migrations/*", "*/venv/*"]
+
+[tool.coverage.report]
+fail_under = 60        # raise this as you add more tests
+show_missing = true
+skip_covered = false
+
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
