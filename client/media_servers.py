@@ -160,7 +160,7 @@ class EmbyAdapter(MediaServerAdapter):
             logger.debug("[emby] No token set — skipping refresh")
             return False
 
-        params  = {"api_key": self.token}
+        params = {"api_key": self.token}
         headers = {"Content-Type": "application/json"}
 
         if self.section:
@@ -205,10 +205,10 @@ class KodiAdapter(MediaServerAdapter):
 
     def refresh_library(self) -> bool:
         endpoint = f"{self.url}/jsonrpc"
-        payload  = {
+        payload = {
             "jsonrpc": "2.0",
             "method":  "VideoLibrary.Scan",
-            "id":      1,
+            "id": 1,
         }
         auth = (self.username, self.password) if self.password else None
         try:
@@ -272,11 +272,11 @@ def get_adapter(name: str = None) -> MediaServerAdapter:
         MediaServerAdapter: The appropriate adapter instance.
     """
     server_type = (name if name is not None else os.environ.get("CARSTASH_MEDIA_SERVER", "none")).lower().strip()
-    token       = os.environ.get("MEDIA_SERVER_TOKEN",  "")
-    section     = os.environ.get("MEDIA_SERVER_SECTION", "")
+    token = os.environ.get("MEDIA_SERVER_TOKEN", "")
+    section = os.environ.get("MEDIA_SERVER_SECTION", "")
     custom_host = os.environ.get("MEDIA_SERVER_HOST", "localhost")
     custom_port = os.environ.get("MEDIA_SERVER_PORT", "")
-    kodi_user   = os.environ.get("KODI_USER", "kodi")
+    kodi_user = os.environ.get("KODI_USER", "kodi")
 
     if server_type not in ("plex", "jellyfin", "emby", "kodi", "none"):
         logger.warning(f"Unknown CARSTASH_MEDIA_SERVER '{server_type}' — defaulting to none")
@@ -306,33 +306,33 @@ def get_adapter(name: str = None) -> MediaServerAdapter:
 
 SUPPORTED_SERVERS = {
     "plex": {
-        "name":         "Plex Media Server",
+        "name": "Plex Media Server",
         "default_port": 32400,
-        "token_hint":   "Settings → Plex Web → Account → Authorized Devices → token in URL",
+        "token_hint": "Settings → Plex Web → Account → Authorized Devices → token in URL",
         "section_hint": "Library section numeric ID (visible in Plex web URL)",
     },
     "jellyfin": {
-        "name":         "Jellyfin",
+        "name": "Jellyfin",
         "default_port": 8096,
-        "token_hint":   "Dashboard → API Keys → + (create new key)",
+        "token_hint": "Dashboard → API Keys → + (create new key)",
         "section_hint": "Optional: specific library item ID from Jellyfin API",
     },
     "emby": {
-        "name":         "Emby",
+        "name": "Emby",
         "default_port": 8096,
-        "token_hint":   "Dashboard → API Keys → + (create new key)",
+        "token_hint": "Dashboard → API Keys → + (create new key)",
         "section_hint": "Optional: specific library item ID from Emby API",
     },
     "kodi": {
-        "name":         "Kodi",
+        "name": "Kodi",
         "default_port": 8080,
-        "token_hint":   "Settings → Services → Control → HTTP password",
+        "token_hint": "Settings → Services → Control → HTTP password",
         "section_hint": "Not used for Kodi (full VideoLibrary.Scan is always triggered)",
     },
     "none": {
-        "name":         "None (manual)",
+        "name": "None (manual)",
         "default_port": None,
-        "token_hint":   "Not required",
+        "token_hint": "Not required",
         "section_hint": "Not required",
     },
 }

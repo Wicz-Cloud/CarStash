@@ -40,10 +40,10 @@ from server.sync.queue import SyncQueue, QueueItem
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL  = 30         # seconds between reachability checks
-PUSH_TIMEOUT   = 10         # seconds for initial connection
-STREAM_CHUNK   = 256 * 1024 # 256 KB chunks during push
-MAX_ATTEMPTS   = 5          # give up after this many failed pushes
+POLL_INTERVAL = 30  # seconds between reachability checks
+PUSH_TIMEOUT = 10  # seconds for initial connection
+STREAM_CHUNK = 256 * 1024  # 256 KB chunks during push
+MAX_ATTEMPTS = 5  # give up after this many failed pushes
 
 
 class HeartbeatPoller:
@@ -117,8 +117,10 @@ class HeartbeatPoller:
             return
 
         if item.push_attempts >= MAX_ATTEMPTS:
-            self.queue.set_state(item.id, "failed",
-                                 error=f"Exceeded {MAX_ATTEMPTS} push attempts")
+            self.queue.set_state(
+                item.id, "failed",
+                error=f"Exceeded {MAX_ATTEMPTS} push attempts"
+            )
             logger.error(f"[{item.id}] Giving up after {MAX_ATTEMPTS} attempts")
             return
 
@@ -165,8 +167,10 @@ class HeartbeatPoller:
         """
         path = item.transcoded_path
         if not path or not os.path.exists(path):
-            self.queue.set_state(item.id, "failed",
-                                 error="Transcoded file missing on server")
+            self.queue.set_state(
+                item.id, "failed",
+                error="Transcoded file missing on server"
+            )
             return
 
         file_size = os.path.getsize(path)
@@ -282,19 +286,21 @@ def push_file(pi_ip: str, src_path: str, dest_filename: str, pi_port: int = 5001
     try:
         with open(src_path, "rb") as f:
             f.seek(offset)
+
             def _chunked_generator():
                 while True:
                     chunk = f.read(STREAM_CHUNK)
                     if not chunk:
                         break
                     yield chunk
+
             resp = requests.put(
                 url,
                 data=_chunked_generator(),
                 headers={
                     "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
                     "Content-Length": str(remaining),
-                    "Content-Type": "application/octet-stream",
+                    "Content-Type": "application/octet-stream",  # comment
                 },
                 timeout=(PUSH_TIMEOUT, None),
                 stream=True,

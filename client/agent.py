@@ -24,20 +24,17 @@ from flask import Flask, jsonify, request, abort
 from functools import wraps
 from media_servers import get_adapter, SUPPORTED_SERVERS
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s — %(message)s",
-)
-logger = logging.getLogger(__name__)
 
-os.makedirs(MEDIA_DIR, exist_ok=True)
-
-# ── Config ─────────────────────────────────────────────────────────────────────
 MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
 MIN_FREE_BYTES = int(os.environ.get("CARSTASH_MIN_FREE_GB", "2")) * 1024 ** 3
 AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN")
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s — %(message)s",
+)
 os.makedirs(MEDIA_DIR, exist_ok=True)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 media_adapter = get_adapter()
@@ -65,13 +62,13 @@ def status():
     usage = shutil.disk_usage(MEDIA_DIR)
     files = _list_files()
     return jsonify({
-        "ok":                True,
-        "media_server":      media_adapter.name,
-        "free_bytes":        usage.free,
-        "used_bytes":        usage.used,
-        "total_bytes":       usage.total,
-        "file_count":        len(files),
-        "media_dir":         MEDIA_DIR,
+        "ok": True,
+        "media_server": media_adapter.name,
+        "free_bytes": usage.free,
+        "used_bytes": usage.used,
+        "total_bytes": usage.total,
+        "file_count": len(files),
+        "media_dir": MEDIA_DIR,
     })
 
 
@@ -80,9 +77,9 @@ def status():
 @app.route("/api/receive/<filename>/offset", methods=["GET"])
 @require_auth
 def get_offset(filename):
-    safe_name  = Path(filename).name
+    safe_name = Path(filename).name
     final_path = os.path.join(MEDIA_DIR, safe_name)
-    tmp_path   = final_path + ".tmp"
+    tmp_path = final_path + ".tmp"
 
     if os.path.exists(final_path):
         return jsonify({"offset": os.path.getsize(final_path), "complete": True})
@@ -101,19 +98,19 @@ def receive_file(filename):
     if not filename.endswith(".mp4"):
         abort(400, description="Only .mp4 files accepted")
 
-    safe_name  = Path(filename).name
+    safe_name = Path(filename).name
     final_path = os.path.join(MEDIA_DIR, safe_name)
-    tmp_path   = final_path + ".tmp"
+    tmp_path = final_path + ".tmp"
 
     # ── Parse Content-Range ───────────────────────────────────────────────────
     content_range = request.headers.get("Content-Range", "")
-    offset     = 0
+    offset = 0
     total_size = 0
 
     if content_range.startswith("bytes "):
         try:
             range_part, total_part = content_range[6:].split("/")
-            offset     = int(range_part.split("-")[0])
+            offset = int(range_part.split("-")[0])
             total_size = int(total_part)
         except (ValueError, IndexError):
             abort(400, description=f"Malformed Content-Range: {content_range}")
@@ -141,7 +138,7 @@ def receive_file(filename):
     # ── Write ─────────────────────────────────────────────────────────────────
     write_mode = "ab" if offset > 0 else "wb"
     action = f"resuming at byte {offset:,}" if offset > 0 else "starting fresh"
-    logger.info(f"Receiving '{safe_name}' — {action} ({content_length/1e6:.1f} MB incoming)")
+    logger.info(f"Receiving '{safe_name}' — {action} ({content_length / 1e6:.1f} MB incoming)")
 
     bytes_written = 0
     try:
@@ -154,7 +151,7 @@ def receive_file(filename):
 
         if total_size > 0 and tmp_size < total_size:
             # More data expected in a future push
-            logger.info(f"Partial receive: {tmp_size/1e6:.1f} / {total_size/1e6:.1f} MB")
+            logger.info(f"Partial receive: {tmp_size / 1e6:.1f} / {total_size / 1e6:.1f} MB")
             return jsonify({
                 "ok":            True,
                 "complete":      False,
@@ -165,7 +162,7 @@ def receive_file(filename):
 
         # Complete — atomically promote
         os.replace(tmp_path, final_path)
-        logger.info(f"Transfer complete: {safe_name} ({total_size/1e6:.1f} MB) ✓")
+        logger.info(f"Transfer complete: {safe_name} ({total_size / 1e6:.1f} MB) ✓")
 
     except Exception as e:
         # Keep .tmp — good bytes survive for resume
@@ -176,12 +173,12 @@ def receive_file(filename):
     media_adapter.refresh_library()
 
     return jsonify({
-        "ok":            True,
-        "complete":      True,
-        "filename":      safe_name,
+        "ok": True,
+        "complete": True,
+        "filename": safe_name,
         "bytes_written": bytes_written,
-        "path":          final_path,
-        "media_server":  media_adapter.name,
+        "path": final_path,
+        "media_server": media_adapter.name,
     })
 
 
@@ -218,7 +215,7 @@ def _evict_if_needed(needed_bytes: int):
             break
         try:
             os.remove(f["path"])
-            logger.info(f"LRU evicted: {f['name']} ({f['size']/1e6:.0f} MB)")
+            logger.info(f"LRU evicted: {f['name']} ({f['size'] / 1e6:.0f} MB)")
         except Exception as e:
             logger.warning(f"Could not evict {f['path']}: {e}")
 
@@ -229,9 +226,9 @@ def _list_files() -> list[dict]:
         if p.is_file() and not p.name.endswith(".tmp"):
             stat = p.stat()
             files.append({
-                "name":  p.name,
-                "path":  str(p),
-                "size":  stat.st_size,
+                "name": p.name,
+                "path": str(p),
+                "size": stat.st_size,
                 "mtime": stat.st_mtime,
             })
     return files

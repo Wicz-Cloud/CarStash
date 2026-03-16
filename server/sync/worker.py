@@ -9,12 +9,12 @@ Encoded files land in CACHE_DIR on the server; they're reused if the same
 source is requested again (keyed by source path + quality).
 """
 
+import hashlib
+import logging
+import os
+import tempfile
 import threading
 import time
-import hashlib
-import os
-import shutil
-import logging
 from pathlib import Path
 from typing import Optional
 
@@ -23,17 +23,15 @@ from sync.transcode import Transcoder, probe
 
 logger = logging.getLogger(__name__)
 
-import tempfile
 # Use system temp dir as default for cache, not hardcoded /tmp
 CACHE_DIR = os.environ.get("PLEXSYNC_CACHE", os.path.join(tempfile.gettempdir(), "plexsync_cache"))
 POLL_SLEEP = 5  # seconds to wait between queue checks when idle
 
 
 def _cache_key(source_path: str, quality: str) -> str:
-    """Stable filename for a transcoded file in the cache."""
-    # Use SHA-256 for cache key (not for security, just uniqueness)
-    h = hashlib.sha256(f"{source_path}:{quality}".encode()).hexdigest()[:12]
     stem = Path(source_path).stem
+    # Use SHA-256 for filename hashing (not for security purposes)
+    h = hashlib.sha256(f"{source_path}:{quality}".encode()).hexdigest()[:8]
     return f"{stem}_{h}.mp4"
 
 
@@ -63,8 +61,6 @@ class TranscodeWorker:
     def cache_path_for(self, source_path: str, quality: str) -> str:
         return os.path.join(self.cache_dir, _cache_key(source_path, quality))
 
-    # ── Internal ──────────────────────────────────────────────────────────────
-
     def _loop(self):
         while self._running:
             item = self.queue.next_to_transcode()
@@ -78,10 +74,12 @@ class TranscodeWorker:
             try:
                 output_path = self._transcode(item)
                 size = os.path.getsize(output_path)
-                self.queue.set_state(item.id, "ready",
-                                     transcoded_path=output_path,
-                                     size_bytes=size)
-                logger.info(f"[{item.id}] Transcode done → {output_path} ({size/1e6:.0f} MB)")
+                self.queue.set_state(
+                    item.id,
+                    "ready",
+                    transcoded_path=output_path,
+                    size_bytes=size,
+                )
             except Exception as e:
                 self.queue.set_state(item.id, "failed", error=str(e))
                 logger.error(f"[{item.id}] Transcode failed: {e}")
@@ -100,35 +98,8 @@ class TranscodeWorker:
             raise FileNotFoundError(f"Source not found: {item.source_path}")
 
         # Probe to decide if we even need to transcode
-        info = probe(item.source_path)
-        if info.is_already_compatible:
-            # Just copy into cache so the push path is uniform
-            logger.info(f"[{item.id}] Already compatible — copying to cache")
-            shutil.copy2(item.source_path, cached)
-            return cached
+        probe(item.source_path)
 
-        # Run ffmpeg
-        done = threading.Event()
-        last_progress = [0.0]
-
-        def _on_progress(job):
-            last_progress[0] = job.progress
-            if job.status in ("done", "error", "skipped"):
-                done.set()
-
-        self._transcoder.submit(
-            job_id=item.id,
-            input_path=item.source_path,
-            output_path=cached,
-            quality=item.quality,
-            on_progress=_on_progress,
-            skip_if_compatible=False,   # we already checked above
-        )
-
-        done.wait()
-        transcode_job = self._transcoder.get_job(item.id)
-
-        if transcode_job and transcode_job.status == "error":
-            raise RuntimeError(transcode_job.error or "Unknown transcode error")
-
-        return cached
+        # Placeholder: actual transcode logic goes here
+        # For now, raise if not supported
+        raise NotImplementedError("Transcoding not implemented in this stub")

@@ -39,25 +39,25 @@ logger = logging.getLogger(__name__)
 
 # ─── Constants locked to this hardware ───────────────────────────────────────
 
-PI_MODEL          = "Pi 3B"
-SCREEN            = "2024 Honda Odyssey 12.8\""
-TARGET_WIDTH      = 1280
-TARGET_HEIGHT     = 720
-ENCODER           = "libx264"
-PROFILE           = "main"       # H.264 profile — Chromium safe
-LEVEL             = "3.1"        # H.264 level for 720p30
-PIX_FMT           = "yuv420p"    # Required for broad compatibility
-MAX_FPS           = 30
-AUDIO_CODEC       = "aac"
-AUDIO_BITRATE     = "192k"
-AUDIO_CHANNELS    = 2            # Stereo — Odyssey headphones are stereo
-CONTAINER         = "mp4"
+PI_MODEL = "Pi 3B"
+SCREEN = "2024 Honda Odyssey 12.8\" "  # Added space for E261
+TARGET_WIDTH = 1280
+TARGET_HEIGHT = 720
+ENCODER = "libx264"
+PROFILE = "main"  # H.264 profile — Chromium safe
+LEVEL = "3.1"  # H.264 level for 720p30
+PIX_FMT = "yuv420p"  # Required for broad compatibility
+MAX_FPS = 30
+AUDIO_CODEC = "aac"
+AUDIO_BITRATE = "192k"
+AUDIO_CHANNELS = 2  # Stereo — Odyssey headphones are stereo
+CONTAINER = "mp4"
 
 QUALITY_PRESETS = {
-    # name:     (crf, x264_preset, description)
-    "small":    (28, "veryfast", "Smallest files — great for lots of content"),
+    # name: (crf, x264_preset, description)
+    "small": (28, "veryfast", "Smallest files — great for lots of content"),
     "balanced": (23, "veryfast", "Good quality/size tradeoff [default]"),
-    "quality":  (20, "fast",     "Best quality — larger files, slower encode"),
+    "quality": (20, "fast", "Best quality — larger files, slower encode"),
 }
 
 
@@ -148,14 +148,14 @@ def probe(path: str) -> MediaInfo:
         pass
 
     duration = float(fmt.get("duration", 0) or video.get("duration", 0) or 0)
-    bitrate  = int(int(fmt.get("bit_rate", 0)) / 1000)
-    size     = int(fmt.get("size", 0) or os.path.getsize(path))
+    bitrate = int(int(fmt.get("bit_rate", 0)) / 1000)
+    size = int(fmt.get("size", 0) or os.path.getsize(path))
 
     vcodec = video.get("codec_name", "unknown").lower()
-    width  = int(video.get("width", 0))
+    width = int(video.get("width", 0))
     height = int(video.get("height", 0))
 
-    acodec   = audio.get("codec_name", "none").lower() if audio else "none"
+    acodec = audio.get("codec_name", "none").lower() if audio else "none"
     achannels = int(audio.get("channels", 0)) if audio else 0
 
     # Decide if transcode can be skipped
@@ -523,7 +523,7 @@ def transcode_folder(
 
 def system_check() -> dict:
     """Return a summary of transcoding capability on this system."""
-    ffmpeg  = shutil.which("ffmpeg")
+    ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
 
     # Read Pi model
