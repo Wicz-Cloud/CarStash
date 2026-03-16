@@ -162,6 +162,9 @@ def health():
     """Lightweight liveness probe -- returns 200 as long as the server is up."""
     return jsonify({"status": "ok", "service": "carstash-server"}), 200
 
+@app.route("/api/queue", methods=["GET"])
+def list_queue():
+    return jsonify([i.to_dict() for i in queue.items()])
 
 if __name__ == "__main__":
     app.run(host=os.environ.get("PLEXSYNC_SERVER_HOST", "127.0.0.1"), port=5000, debug=False)

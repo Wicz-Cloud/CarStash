@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>CarStash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #09090b;
+  --bg2:      #0f1014;
+  --bg3:      #16181f;
+  --bg4:      #1c1f28;
+  --border:   #222530;
+  --border2:  #2c3044;
+  --text:     #c8cce0;
+  --muted:    #4e5570;
+  --muted2:   #7a82a0;
+  --accent:   #e8b84b;
+  --accent2:  #b8841a;
+  --green:    #3ecf70;
+  --red:      #e85252;
+  --blue:     #5aaeff;
+  --font-h:   'Rajdhani', sans-serif;
+  --font-m:   'IBM Plex Mono', monospace;
+  --r:        6px;
+  --sidebar:  260px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-m);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── LAYOUT ── */
+.app {
+  display: grid;
+  grid-template-rows: 54px 1fr;
+  grid-template-columns: var(--sidebar) 1fr;
+  min-height: 100vh;
+}
+
+/* ── HEADER ── */
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 0 24px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 200;
+}
+.logo {
+  font-family: var(--font-h);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+  flex-shrink: 0;
+  user-select: none;
+}
+.logo em { color: var(--muted); font-style: normal; font-weight: 400; }
+.header-gap { flex: 1; }
+.server-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 4px 10px;
+}
+.server-input-wrap label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.server-input-wrap input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-m);
+  font-size: 12px;
+  width: 210px;
+}
+.pi-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--bg3);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  transition: border-color 0.4s, background 0.4s;
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+}
+.pi-pill.online  { border-color: var(--green); background: rgba(62,207,112,0.06); }
+.pi-pill.offline { border-color: var(--red);   background: rgba(232,82,82,0.06); }
+.pi-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.4s, box-shadow 0.4s;
+}
+.pi-pill.online  .pi-dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2.4s ease-in-out infinite; }
+.pi-pill.offline .pi-dot { background: var(--red); }
+.pi-label { color: var(--muted2); }
+.pi-pill.online  .pi-label { color: var(--green); }
+.pi-pill.offline .pi-label { color: var(--red); }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  position: sticky;
+  top: 54px;
+  height: calc(100vh - 54px);
+}
+.sidebar-section {
+  padding: 14px 16px 8px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.stats-block {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.stat-row { display: flex; flex-direction: column; gap: 5px; }
+.stat-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted2); }
+.stat-label span:last-child { color: var(--text); }
+.stat-bar { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+.stat-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.6s ease; }
+.stat-bar-fill.green { background: var(--green); }
+.stat-bar-fill.red   { background: var(--red); }
+.quality-pick { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.quality-pick label {
+  font-size: 10px; letter-spacing: 1.5px; color: var(--muted);
+  text-transform: uppercase; display: block; margin-bottom: 8px;
+}
+.quality-opts { display: flex; gap: 6px; }
+.q-btn {
+  flex: 1; padding: 6px 4px;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--r);
+  color: var(--muted2); font-family: var(--font-m); font-size: 11px;
+  cursor: pointer; text-align: center; transition: all 0.15s;
+}
+.q-btn:hover { border-color: var(--accent2); color: var(--text); }
+.q-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(232,184,75,0.08); }
+.nav-links { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.nav-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 18px; font-size: 13px; color: var(--muted2);
+  cursor: pointer; border-left: 2px solid transparent;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.nav-link:hover { color: var(--text); background: var(--bg3); }
+.nav-link.active { color: var(--accent); border-left-color: var(--accent); background: rgba(232,184,75,0.05); }
+.nav-icon { width: 14px; text-align: center; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto; background: var(--accent2); color: var(--bg);
+  font-size: 10px; padding: 1px 5px; border-radius: 10px;
+  font-weight: 700; min-width: 16px; text-align: center;
+}
+
+/* ── MAIN ── */
+main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+
+/* ── PANEL ── */
+.panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg3);
+}
+.panel-title {
+  font-family: var(--font-h); font-size: 15px; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--text);
+}
+.panel-body { padding: 16px; }
+
+/* ── FILE BROWSER ── */
+.breadcrumb {
+  display: flex; align-items: center; gap: 4px; padding: 8px 16px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; background: var(--bg);
+}
+.breadcrumb-seg {
+  color: var(--muted2); cursor: pointer; font-size: 12px;
+  padding: 2px 4px; border-radius: 3px; transition: color 0.15s;
+}
+.breadcrumb-seg:hover { color: var(--accent); }
+.breadcrumb-seg.last { color: var(--text); cursor: default; }
+.breadcrumb-sep { color: var(--muted); font-size: 10px; }
+.file-list { list-style: none; }
+.file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+}
+.file-row:last-child { border-bottom: none; }
+.file-row:hover { background: var(--bg3); }
+.file-icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 13px; }
+.file-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row.is-dir .file-name { color: var(--blue); }
+.file-size { color: var(--muted); font-size: 11px; flex-shrink: 0; width: 70px; text-align: right; }
+.file-add-btn {
+  padding: 4px 10px; background: transparent; border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--muted2); font-family: var(--font-m); font-size: 11px;
+  cursor: pointer; flex-shrink: 0; transition: all 0.15s;
+}
+.file-add-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(232,184,75,0.06); }
+.browser-empty  { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 12px; }
+.browser-loading { padding: 24px 16px; text-align: center; color: var(--muted2); font-size: 12px; letter-spacing: 1px; }
+.browser-error  { padding: 14px 16px; color: var(--red); font-size: 12px; background: rgba(232,82,82,0.06); }
+.browser-path-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg3);
+}
+.browser-path-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  padding: 5px 10px; color: var(--text); font-family: var(--font-m); font-size: 12px; outline: none;
+}
+.browser-path-input:focus { border-color: var(--accent2); }
+.icon-btn {
+  background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  color: var(--muted2); font-size: 13px; width: 30px; height: 30px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.icon-btn:hover { border-color: var(--accent2); color: var(--text); }
+
+/* ── QUEUE ── */
+.queue-list { list-style: none; }
+.queue-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background 0.12s;
+}
+.queue-item:last-child { border-bottom: none; }
+.queue-item:hover { background: var(--bg3); }
+.qi-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.qi-status.queued   { background: var(--muted); }
+.qi-status.pending  { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.4s ease-in-out infinite; }
+.qi-status.sending  { background: var(--blue);   box-shadow: 0 0 6px var(--blue);   animation: blink 0.9s ease-in-out infinite; }
+.qi-status.done     { background: var(--green); }
+.qi-status.error    { background: var(--red); }
+.qi-info { flex: 1; min-width: 0; }
+.qi-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qi-meta { font-size: 10px; color: var(--muted); margin-top: 2px; display: flex; gap: 10px; }
+.qi-progress-wrap { width: 90px; flex-shrink: 0; }
+.qi-progress-bar { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-bottom: 3px; }
+.qi-progress-fill { height: 100%; border-radius: 2px; background: var(--blue); transition: width 0.5s ease; }
+.qi-progress-fill.done { background: var(--green); }
+.qi-pct { font-size: 10px; color: var(--muted2); text-align: right; }
+.qi-remove {
+  background: transparent; border: none; color: var(--muted);
+  cursor: pointer; font-size: 14px; padding: 4px; border-radius: 3px;
+  transition: color 0.15s; flex-shrink: 0; line-height: 1;
+}
+.qi-remove:hover { color: var(--red); }
+.queue-empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* ── TRANSFER VIEW ── */
+.transfer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.transfer-stat {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px;
+}
+.ts-label { font-size: 10px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
+.ts-value { font-family: var(--font-h); font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: 1px; }
+.ts-value.green { color: var(--green); }
+.ts-value.red   { color: var(--red); }
+.ts-value.amber { color: var(--accent); }
+.ts-value.blue  { color: var(--blue); }
+.current-transfer {
+  margin-top: 14px; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px;
+}
+.ct-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.ct-name { font-size: 13px; color: var(--text); }
+.ct-tag { font-size: 10px; color: var(--muted2); }
+.ct-bar { height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.ct-bar-fill {
+  height: 100%; background: linear-gradient(90deg, var(--blue), var(--accent));
+  border-radius: 2px; transition: width 0.8s ease; position: relative;
+}
+.ct-bar-fill::after {
+  content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 20px;
+  background: rgba(255,255,255,0.3); filter: blur(4px);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+.ct-footer { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.ct-none { color: var(--muted); font-size: 12px; font-style: italic; }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
+  width: 100%; max-width: 480px; overflow: hidden;
+  transform: translateY(16px); transition: transform 0.2s;
+}
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--bg3);
+}
+.modal-title { font-family: var(--font-h); font-size: 15px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.modal-close { background: transparent; border: none; color: var(--muted2); font-size: 18px; cursor: pointer; line-height: 1; transition: color 0.15s; }
+.modal-close:hover { color: var(--red); }
+.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.form-row { display: flex; flex-direction: column; gap: 5px; }
+.form-label { font-size: 10px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; }
+.form-input {
+  background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  padding: 8px 10px; color: var(--text); font-family: var(--font-m); font-size: 13px;
+  outline: none; transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--accent2); }
+.form-input[readonly] { color: var(--muted2); }
+.form-row-h { display: flex; gap: 10px; }
+.form-row-h .form-row { flex: 1; }
+.probe-info {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 12px; font-size: 11px; color: var(--muted2); display: none;
+}
+.probe-info.visible { display: block; }
+.probe-info span { color: var(--text); }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--border); background: var(--bg3);
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 8px 18px; border-radius: var(--r); font-family: var(--font-m);
+  font-size: 12px; cursor: pointer; border: 1px solid transparent;
+  transition: all 0.15s; letter-spacing: 0.5px;
+}
+.btn-ghost { background: transparent; border-color: var(--border2); color: var(--muted2); }
+.btn-ghost:hover { border-color: var(--text); color: var(--text); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── TOAST ── */
+.toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast {
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--r);
+  padding: 10px 14px; font-size: 12px; color: var(--text); max-width: 300px;
+  border-left: 3px solid var(--accent);
+  animation: slideIn 0.2s ease, fadeOut 0.3s ease 2.7s forwards;
+}
+.toast.error   { border-left-color: var(--red); }
+.toast.success { border-left-color: var(--green); }
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 700px) {
+  :root { --sidebar: 100%; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
+  header { padding: 0 12px; gap: 8px; }
+  .server-input-wrap input { width: 120px; }
+  .logo { font-size: 17px; letter-spacing: 3px; }
+  .sidebar {
+    position: static; height: auto; border-right: none;
+    border-bottom: 1px solid var(--border);
+    flex-direction: row; flex-wrap: wrap;
+  }
+  .sidebar-section { display: none; }
+  .stats-block { flex: 1 1 100%; padding: 10px 14px; flex-direction: row; gap: 14px; }
+  .quality-pick { flex: 1 1 100%; padding: 10px 14px; }
+  .nav-links { display: flex; flex: 1 1 100%; padding: 0; border-bottom: none; border-top: 1px solid var(--border); }
+  .nav-link {
+    flex: 1; padding: 10px 8px; font-size: 12px; border-left: none;
+    border-bottom: 2px solid transparent; justify-content: center;
+    flex-direction: column; align-items: center; gap: 3px;
+  }
+  .nav-link.active { border-bottom-color: var(--accent); border-left: none; }
+  .nav-icon { width: auto; font-size: 16px; }
+  .nav-badge { margin-left: 0; }
+  .transfer-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 500px) {
+  .file-row { padding: 13px 14px; min-height: 50px; }
+  .queue-item { padding: 13px 14px; min-height: 56px; }
+  .file-add-btn { padding: 7px 12px; font-size: 12px; }
+  .qi-remove { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- HEADER -->
+  <header>
+    <div class="logo">Car<em>Stash</em></div>
+    <div class="server-input-wrap">
+      <label>SERVER</label>
+      <input type="text" id="serverUrl" value="http://localhost:5000" placeholder="http://192.168.1.x:5000">
+    </div>
+    <div class="header-gap"></div>
+    <div class="pi-pill" id="piPill">
+      <div class="pi-dot"></div>
+      <span class="pi-label" id="piLabel">CHECKING…</span>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">SYSTEM</div>
+    <div class="stats-block">
+      <div class="stat-row">
+        <div class="stat-label"><span>SERVER DISK</span><span id="diskLabel">—</span></div>
+        <div class="stat-bar"><div class="stat-bar-fill" id="diskBar" style="width:0%"></div></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-label"><span>PI FREE</span><span id="piFreeLabel">—</span></div>
+        <div class="stat-bar"><div class="stat-bar-fill green" id="piFreeBar" style="width:50%"></div></div>
+      </div>
+    </div>
+    <div class="quality-pick">
+      <label>TRANSCODE QUALITY</label>
+      <div class="quality-opts">
+        <button class="q-btn" data-q="small">SMALL</button>
+        <button class="q-btn active" data-q="balanced">BALANCED</button>
+        <button class="q-btn" data-q="quality">QUALITY</button>
+      </div>
+    </div>
+    <nav class="nav-links">
+      <div class="nav-link active" data-view="browser">
+        <span class="nav-icon">📁</span><span>Browse</span>
+      </div>
+      <div class="nav-link" data-view="queue">
+        <span class="nav-icon">⏳</span><span>Queue</span>
+        <span class="nav-badge" id="queueBadge" style="display:none">0</span>
+      </div>
+      <div class="nav-link" data-view="transfer">
+        <span class="nav-icon">📡</span><span>Transfer</span>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <main id="main">
+
+    <!-- BROWSER -->
+    <div id="view-browser">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">FILE BROWSER</span>
+          <button class="btn btn-ghost" id="refreshBrowserBtn" style="padding:4px 10px;font-size:11px">↻ REFRESH</button>
+        </div>
+        <div class="browser-path-bar">
+          <input class="browser-path-input" id="pathInput" value="/mnt/carstash/media" placeholder="/path/to/media">
+          <button class="icon-btn" id="upBtn" title="Go up">↑</button>
+          <button class="icon-btn" id="goBtn" title="Navigate">→</button>
+        </div>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div id="fileListWrap"><div class="browser-loading">LOADING…</div></div>
+      </div>
+    </div>
+
+    <!-- QUEUE -->
+    <div id="view-queue" style="display:none">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">SYNC QUEUE</span>
+          <button class="btn btn-ghost" id="refreshQueueBtn" style="padding:4px 10px;font-size:11px">↻ REFRESH</button>
+        </div>
+        <ul class="queue-list" id="queueList">
+          <li class="queue-empty">Queue is empty — browse and add files.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- TRANSFER -->
+    <div id="view-transfer" style="display:none">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">TRANSFER STATUS</span>
+          <button class="btn btn-ghost" id="refreshTransferBtn" style="padding:4px 10px;font-size:11px">↻ REFRESH</button>
+        </div>
+        <div class="panel-body">
+          <div class="transfer-grid">
+            <div class="transfer-stat">
+              <div class="ts-label">PI STATUS</div>
+              <div class="ts-value" id="tsPiStatus">—</div>
+            </div>
+            <div class="transfer-stat">
+              <div class="ts-label">PI FREE SPACE</div>
+              <div class="ts-value blue" id="tsPiFree">—</div>
+            </div>
+            <div class="transfer-stat">
+              <div class="ts-label">SERVER FREE</div>
+              <div class="ts-value amber" id="tsDisk">—</div>
+            </div>
+            <div class="transfer-stat">
+              <div class="ts-label">FFMPEG</div>
+              <div class="ts-value" id="tsFfmpeg">—</div>
+            </div>
+          </div>
+          <div class="current-transfer" id="currentTransfer">
+            <div class="ct-none">No active transfer.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ADD TO QUEUE MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">ADD TO QUEUE</span>
+      <button class="modal-close" id="modalCloseBtn">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <span class="form-label">SOURCE PATH</span>
+        <input class="form-input" id="mSourcePath" readonly>
+      </div>
+      <div class="form-row">
+        <span class="form-label">OUTPUT FILENAME</span>
+        <input class="form-input" id="mName" placeholder="movie-title.mp4">
+      </div>
+      <div class="form-row-h">
+        <div class="form-row">
+          <span class="form-label">QUALITY</span>
+          <select class="form-input" id="mQuality">
+            <option value="small">Small</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="quality">Quality</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <span class="form-label">PRIORITY</span>
+          <input class="form-input" id="mPriority" type="number" value="0" min="0" max="10">
+        </div>
+      </div>
+      <div class="probe-info" id="probeInfo"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancelBtn">CANCEL</button>
+      <button class="btn btn-primary" id="addBtn">ADD TO QUEUE</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ════════════════════════════════════════
+   STATE
+════════════════════════════════════════ */
+let currentPath  = '/mnt/carstash/media';
+let currentView  = 'browser';
+let selectedQuality = 'balanced';
+let queueItems   = [];   // local cache; populated from POST responses + GET /api/queue if available
+let systemData   = null;
+
+const serverInput = document.getElementById('serverUrl');
+function baseUrl() { return serverInput.value.replace(/\/$/, ''); }
+
+/* ════════════════════════════════════════
+   API
+════════════════════════════════════════ */
+async function api(path, opts = {}) {
+  const res = await fetch(baseUrl() + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/* ════════════════════════════════════════
+   NAV
+════════════════════════════════════════ */
+document.querySelectorAll('.nav-link').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+    currentView = el.dataset.view;
+    document.querySelectorAll('[id^="view-"]').forEach(v => v.style.display = 'none');
+    document.getElementById('view-' + currentView).style.display = '';
+    if (currentView === 'queue')    refreshQueue();
+    if (currentView === 'transfer') refreshSystem();
+  });
+});
+
+/* ════════════════════════════════════════
+   QUALITY PICKER
+════════════════════════════════════════ */
+document.querySelectorAll('.q-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.q-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedQuality = btn.dataset.q;
+    document.getElementById('mQuality').value = selectedQuality;
+  });
+});
+
+/* ════════════════════════════════════════
+   SYSTEM / POLL
+════════════════════════════════════════ */
+async function refreshSystem() {
+  try {
+    const data = await api('/api/system');
+    systemData = data;
+    setPiPill(data.pi_reachable);
+    updateSidebarStats(data);
+    if (currentView === 'transfer') updateTransferView(data);
+  } catch {
+    setPiPill(null);
+  }
+}
+
+function setPiPill(reachable) {
+  const pill  = document.getElementById('piPill');
+  const label = document.getElementById('piLabel');
+  pill.className = 'pi-pill';
+  if (reachable === true)  { pill.classList.add('online');  label.textContent = 'PI ONLINE'; }
+  else if (reachable === false) { pill.classList.add('offline'); label.textContent = 'PI OFFLINE'; }
+  else label.textContent = 'UNREACHABLE';
+}
+
+function fmt(bytes) {
+  if (bytes == null) return '—';
+  if (bytes >= 1e12) return (bytes / 1e12).toFixed(1) + ' TB';
+  if (bytes >= 1e9)  return (bytes / 1e9).toFixed(1)  + ' GB';
+  if (bytes >= 1e6)  return (bytes / 1e6).toFixed(1)  + ' MB';
+  return Math.round(bytes / 1e3) + ' KB';
+}
+
+function updateSidebarStats(data) {
+  if (data.server_disk) {
+    const pct = data.server_disk.pct;
+    document.getElementById('diskLabel').textContent = `${pct}% (${fmt(data.server_disk.free)} free)`;
+    const fill = document.getElementById('diskBar');
+    fill.style.width = pct + '%';
+    fill.className = 'stat-bar-fill' + (pct > 85 ? ' red' : '');
+  }
+  if (data.pi_free_bytes != null) {
+    document.getElementById('piFreeLabel').textContent = fmt(data.pi_free_bytes);
+    const pct = Math.min(100, (data.pi_free_bytes / (20 * 1e9)) * 100);
+    document.getElementById('piFreeBar').style.width = pct + '%';
+  }
+}
+
+function updateTransferView(data) {
+  const piEl = document.getElementById('tsPiStatus');
+  piEl.textContent = data.pi_reachable ? 'ONLINE' : 'OFFLINE';
+  piEl.className   = 'ts-value ' + (data.pi_reachable ? 'green' : 'red');
+  document.getElementById('tsPiFree').textContent = fmt(data.pi_free_bytes);
+  if (data.server_disk) {
+    document.getElementById('tsDisk').textContent = fmt(data.server_disk.free) + ' FREE';
+  }
+  const ffOk = data.transcode_system?.ffmpeg_ok;
+  const ffEl = document.getElementById('tsFfmpeg');
+  ffEl.textContent = ffOk == null ? '—' : (ffOk ? 'OK' : 'MISSING');
+  ffEl.className   = 'ts-value ' + (ffOk ? 'green' : ffOk === false ? 'red' : '');
+  renderActiveTransfer(data);
+}
+
+function renderActiveTransfer(data) {
+  const wrap = document.getElementById('currentTransfer');
+  const id   = data.current_transcode;
+  if (!id) { wrap.innerHTML = '<div class="ct-none">No active transfer.</div>'; return; }
+  const item = queueItems.find(i => i.id === id);
+  const name = item?.name || id;
+  const pct  = item?.progress ?? 0;
+  wrap.innerHTML = `
+    <div class="ct-header">
+      <div class="ct-name">${esc(name)}</div>
+      <div class="ct-tag">TRANSCODING · ${item?.quality || selectedQuality}</div>
+    </div>
+    <div class="ct-bar"><div class="ct-bar-fill" style="width:${pct}%"></div></div>
+    <div class="ct-footer"><span>In progress</span><span>${pct}%</span></div>`;
+}
+
+/* ════════════════════════════════════════
+   FILE BROWSER
+════════════════════════════════════════ */
+document.getElementById('refreshBrowserBtn').addEventListener('click', () => navigate(currentPath));
+document.getElementById('upBtn').addEventListener('click', goUp);
+document.getElementById('goBtn').addEventListener('click', () => navigate(document.getElementById('pathInput').value));
+document.getElementById('pathInput').addEventListener('keydown', e => { if (e.key === 'Enter') navigate(e.target.value); });
+
+async function navigate(path) {
+  path = path || currentPath;
+  document.getElementById('pathInput').value = path;
+  const wrap = document.getElementById('fileListWrap');
+  wrap.innerHTML = '<div class="browser-loading">LOADING…</div>';
+  renderBreadcrumb(path);
+  try {
+    const data = await api('/api/browse?path=' + encodeURIComponent(path));
+    currentPath = data.path;
+    document.getElementById('pathInput').value = currentPath;
+    renderBreadcrumb(currentPath);
+    renderFileList(data.entries);
+  } catch (e) {
+    wrap.innerHTML = `<div class="browser-error">ERROR: ${esc(e.message)}</div>`;
+  }
+}
+
+function goUp() {
+  const parts = currentPath.replace(/\/$/, '').split('/').filter(Boolean);
+  if (!parts.length) return;
+  parts.pop();
+  navigate('/' + parts.join('/') || '/');
+}
+
+function renderBreadcrumb(path) {
+  const el = document.getElementById('breadcrumb');
+  const parts = path.replace(/\/$/, '').split('/').filter(Boolean);
+  let html = `<span class="breadcrumb-seg" data-path="/">/</span>`;
+  parts.forEach((p, i) => {
+    const full = '/' + parts.slice(0, i + 1).join('/');
+    const last = i === parts.length - 1;
+    html += `<span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-seg${last ? ' last' : ''}" data-path="${esc(full)}">${esc(p)}</span>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.breadcrumb-seg:not(.last)').forEach(seg => {
+    seg.addEventListener('click', () => navigate(seg.dataset.path));
+  });
+}
+
+function renderFileList(entries) {
+  const wrap = document.getElementById('fileListWrap');
+  if (!entries || !entries.length) {
+    wrap.innerHTML = '<div class="browser-empty">Directory is empty.</div>';
+    return;
+  }
+  const MEDIA_EXT = new Set(['mkv','mp4','avi','mov','m4v','ts','wmv','mpg','mpeg']);
+  const ul = document.createElement('ul');
+  ul.className = 'file-list';
+
+  entries.forEach(e => {
+    const li = document.createElement('li');
+    li.className = 'file-row' + (e.is_dir ? ' is-dir' : '');
+
+    if (e.is_dir) {
+      li.innerHTML = `<span class="file-icon">📁</span>
+        <span class="file-name">${esc(e.name)}</span>
+        <span class="file-size">—</span>`;
+      li.addEventListener('click', () => navigate(e.path));
+    } else {
+      const ext = e.name.split('.').pop().toLowerCase();
+      const isMedia = MEDIA_EXT.has(ext);
+      li.innerHTML = `<span class="file-icon">${isMedia ? '🎬' : '📄'}</span>
+        <span class="file-name">${esc(e.name)}</span>
+        <span class="file-size">${fmt(e.size)}</span>
+        ${isMedia ? '<button class="file-add-btn">+ QUEUE</button>' : ''}`;
+      if (isMedia) {
+        li.querySelector('.file-add-btn').addEventListener('click', ev => {
+          ev.stopPropagation();
+          openModal(e.path, e.name);
+        });
+      }
+    }
+    ul.appendChild(li);
+  });
+
+  wrap.innerHTML = '';
+  wrap.appendChild(ul);
+}
+
+/* ════════════════════════════════════════
+   MODAL
+════════════════════════════════════════ */
+document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+document.getElementById('cancelBtn').addEventListener('click', closeModal);
+document.getElementById('addBtn').addEventListener('click', submitQueue);
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+function openModal(path, name) {
+  document.getElementById('mSourcePath').value = path;
+  document.getElementById('mName').value = name.replace(/\.[^.]+$/, '') + '.mp4';
+  document.getElementById('mQuality').value = selectedQuality;
+  document.getElementById('mPriority').value = 0;
+  document.getElementById('probeInfo').className = 'probe-info';
+  document.getElementById('addBtn').disabled = false;
+  document.getElementById('modalOverlay').classList.add('open');
+  probeFile(path);
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+async function probeFile(path) {
+  const info = document.getElementById('probeInfo');
+  info.className = 'probe-info visible';
+  info.textContent = 'Probing file…';
+  try {
+    const d = await api('/api/probe', { method: 'POST', body: JSON.stringify({ path }) });
+    const dur   = d.duration   ? fmtDuration(d.duration)   : '?';
+    const codec = d.video_codec || d.codec || '?';
+    const res   = d.resolution  || (d.width && d.height ? `${d.width}×${d.height}` : '?');
+    const tc    = d.needs_transcode;
+    info.innerHTML =
+      `Duration: <span>${esc(dur)}</span> &nbsp;·&nbsp; ` +
+      `Codec: <span>${esc(String(codec))}</span> &nbsp;·&nbsp; ` +
+      `Res: <span>${esc(String(res))}</span>` +
+      (tc != null ? ` &nbsp;·&nbsp; Transcode: <span>${tc ? 'YES' : 'PASSTHROUGH'}</span>` : '');
+  } catch {
+    info.textContent = 'Could not probe file — will transcode anyway.';
+  }
+}
+
+function fmtDuration(s) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = Math.floor(s % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m ${ss}s`;
+}
+
+async function submitQueue() {
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true;
+  const payload = {
+    source_path: document.getElementById('mSourcePath').value,
+    name:        document.getElementById('mName').value.trim(),
+    quality:     document.getElementById('mQuality').value,
+    priority:    parseInt(document.getElementById('mPriority').value) || 0,
+  };
+  if (!payload.name) { toast('Output filename is required.', 'error'); btn.disabled = false; return; }
+  try {
+    const item = await api('/api/queue', { method: 'POST', body: JSON.stringify(payload) });
+    queueItems.push({ ...item, progress: 0 });
+    updateQueueBadge();
+    closeModal();
+    toast(`Added: ${payload.name}`, 'success');
+    if (currentView === 'queue') renderQueueList();
+  } catch (e) {
+    toast('Failed to add: ' + e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+/* ════════════════════════════════════════
+   QUEUE
+════════════════════════════════════════ */
+document.getElementById('refreshQueueBtn').addEventListener('click', refreshQueue);
+
+async function refreshQueue() {
+  // GET /api/queue is not yet in app.py.
+  // Add this route to server/app.py to enable live queue listing:
+  //
+  //   @app.route("/api/queue", methods=["GET"])
+  //   def list_queue():
+  //       return jsonify([i.to_dict() for i in queue.items()])
+  //
+  // Until then, the UI falls back to the local in-session cache.
+  try {
+    const data = await api('/api/queue');
+    if (Array.isArray(data)) { queueItems = data; updateQueueBadge(); }
+  } catch { /* endpoint not yet implemented */ }
+  renderQueueList();
+}
+
+function renderQueueList() {
+  const list = document.getElementById('queueList');
+  if (!queueItems.length) {
+    list.innerHTML = '<li class="queue-empty">Queue is empty — browse and add files.</li>';
+    return;
+  }
+  list.innerHTML = queueItems.map(item => {
+    const pct = item.progress ?? (item.status === 'done' ? 100 : 0);
+    const st  = item.status || 'queued';
+    return `<li class="queue-item" data-id="${esc(item.id)}">
+      <div class="qi-status ${esc(st)}"></div>
+      <div class="qi-info">
+        <div class="qi-name">${esc(item.name || item.id)}</div>
+        <div class="qi-meta">
+          <span>⚙ ${esc(item.quality || '—')}</span>
+          <span>P${item.priority ?? 0}</span>
+          <span>${esc(st)}</span>
+        </div>
+      </div>
+      <div class="qi-progress-wrap">
+        <div class="qi-progress-bar">
+          <div class="qi-progress-fill ${st === 'done' ? 'done' : ''}" style="width:${pct}%"></div>
+        </div>
+        <div class="qi-pct">${pct}%</div>
+      </div>
+      <button class="qi-remove" title="Remove">✕</button>
+    </li>`;
+  }).join('');
+
+  list.querySelectorAll('.qi-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.closest('.queue-item').dataset.id;
+      queueItems = queueItems.filter(i => String(i.id) !== id);
+      updateQueueBadge();
+      renderQueueList();
+      toast('Removed from local view.', 'info');
+    });
+  });
+}
+
+function updateQueueBadge() {
+  const n = queueItems.filter(i => i.status !== 'done' && i.status !== 'error').length;
+  const badge = document.getElementById('queueBadge');
+  badge.textContent = n;
+  badge.style.display = n > 0 ? '' : 'none';
+}
+
+/* ════════════════════════════════════════
+   TOAST
+════════════════════════════════════════ */
+function toast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type === 'error' ? 'error' : type === 'success' ? 'success' : '');
+  t.textContent = msg;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+/* ════════════════════════════════════════
+   UTILS
+════════════════════════════════════════ */
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ════════════════════════════════════════
+   SERVER URL CHANGE
+════════════════════════════════════════ */
+serverInput.addEventListener('change', () => {
+  refreshSystem();
+  navigate(currentPath);
+});
+
+document.getElementById('refreshTransferBtn').addEventListener('click', refreshSystem);
+
+/* ════════════════════════════════════════
+   INIT
+════════════════════════════════════════ */
+(async function init() {
+  await refreshSystem();
+  await navigate(currentPath);
+  setInterval(refreshSystem, 15_000);
+  setInterval(() => { if (currentView === 'queue') refreshQueue(); }, 10_000);
+})();
+</script>
+</body>
+</html>
