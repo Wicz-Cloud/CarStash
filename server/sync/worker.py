@@ -18,8 +18,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from sync.queue import SyncQueue
-from sync.transcode import Transcoder, probe
+from .queue import SyncQueue
+from .transcode import Transcoder, probe
 
 logger = logging.getLogger(__name__)
 

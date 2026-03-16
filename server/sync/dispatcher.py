@@ -39,7 +39,7 @@ from typing import Optional
 
 import requests
 
-from server.sync.queue import QueueItem, SyncQueue
+from .queue import QueueItem, SyncQueue
 
 logger = logging.getLogger(__name__)
 

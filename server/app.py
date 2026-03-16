@@ -15,10 +15,10 @@ except ImportError:
         pass
 
 
-from sync.dispatcher import HeartbeatPoller
-from sync.queue import SyncQueue
-from sync.transcode import probe, system_check
-from sync.worker import TranscodeWorker
+from .sync.dispatcher import HeartbeatPoller
+from .sync.queue import SyncQueue
+from .sync.transcode import probe, system_check
+from .sync.worker import TranscodeWorker
 
 STATE_FILE = os.environ.get("CARSTASH_STATE_FILE", os.path.join(tempfile.gettempdir(), "carstash_state.json"))
 CACHE_DIR = os.environ.get("CARSTASH_CACHE", os.path.join(tempfile.gettempdir(), "carstash_cache"))
