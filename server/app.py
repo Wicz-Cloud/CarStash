@@ -1,10 +1,13 @@
+import json
 import logging
 import os
+import re
 import shutil
 import tempfile
+import time
 from logging.handlers import TimedRotatingFileHandler
 
-from flask import Flask, abort, jsonify, request
+from flask import Flask, Response, abort, jsonify, request, stream_with_context
 from flask_cors import CORS
 from flask import send_from_directory
 
@@ -49,29 +52,51 @@ app = Flask(__name__)
 CORS(app)
 
 
+class _PollingFilter(logging.Filter):
+    """Drop noisy high-frequency HTTP access log entries from Werkzeug."""
+    _BORING = (
+        '"GET /api/queue HTTP',
+        '"GET /api/system HTTP',
+        '"GET /api/logs HTTP',
+        '"GET /api/logs/stream HTTP',
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(p in msg for p in self._BORING)
+
+
 def setup_logging():
     log_path = os.path.join(LOG_DIR, "carstash-server.log")
     handler = TimedRotatingFileHandler(log_path, when="midnight", backupCount=7)
-    formatter = ColoredFormatter(
-        "%(log_color)s%(asctime)s %(levelname)s — %(message)s",
+
+    # Plain formatter for the file — colorlog adds ANSI codes that pollute the file
+    plain_formatter = logging.Formatter(
+        "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        log_colors={
-            "DEBUG": "cyan",
-            "INFO": "green",
-            "WARNING": "yellow",
-            "ERROR": "red",
-            "CRITICAL": "bold_red",
-        },
     )
-    handler.setFormatter(formatter)
+    handler.setFormatter(plain_formatter)
+    handler.addFilter(_PollingFilter())
+
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(handler)
-    root_logger.info("Logging initialized")
+
+    # Suppress noisy Werkzeug access logs from the console too
+    logging.getLogger("werkzeug").addFilter(_PollingFilter())
+
+    root_logger.info("=== CarStash server starting ===")
+    root_logger.info(f"Log: {log_path} | Media: {MEDIA_DIR} | Cache: {CACHE_DIR}")
 
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE.sub("", text)
 
 
 queue = SyncQueue(state_path=STATE_FILE)
@@ -183,6 +208,60 @@ def system_status():
     )
 
 
+# ── Log endpoints ─────────────────────────────────────────────────────────────
+@app.route("/api/logs", methods=["GET"])
+def get_logs():
+    """Return the last N lines of the server log."""
+    n = min(int(request.args.get("n", 200)), 1000)
+    log_path = os.path.join(LOG_DIR, "carstash-server.log")
+    try:
+        with open(log_path, "r", errors="replace") as f:
+            lines = f.readlines()
+        return jsonify({"lines": [_strip_ansi(l.rstrip()) for l in lines[-n:] if l.strip()]})
+    except FileNotFoundError:
+        return jsonify({"lines": []})
+
+
+@app.route("/api/logs/stream")
+def stream_logs():
+    """SSE endpoint — streams new log lines as they are written."""
+    log_path = os.path.join(LOG_DIR, "carstash-server.log")
+
+    def generate():
+        # Send the last 100 historical lines first
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                lines = f.readlines()
+            for line in lines[-500:]:
+                cleaned = _strip_ansi(line.rstrip())
+                if cleaned:
+                    yield f"data: {json.dumps(cleaned)}\n\n"
+        except FileNotFoundError:
+            yield f"data: {json.dumps('[log file not found yet]')}\n\n"
+
+        # Tail live
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                f.seek(0, 2)  # seek to end
+                while True:
+                    line = f.readline()
+                    if line:
+                        cleaned = _strip_ansi(line.rstrip())
+                        if cleaned:
+                            yield f"data: {json.dumps(cleaned)}\n\n"
+                    else:
+                        time.sleep(0.3)
+                        yield ": keep-alive\n\n"
+        except GeneratorExit:
+            pass
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── Health check (used by CI smoke test) ─────────────────────────────────────
 @app.route("/health", methods=["GET"])
 def health():
@@ -191,7 +270,7 @@ def health():
 
 @app.route("/api/queue", methods=["GET"])
 def list_queue():
-    return jsonify([i.to_dict() for i in queue._items.values()])
+    return jsonify([i.to_dict() for i in queue.list_all()])
 
 @app.route("/")
 def index():

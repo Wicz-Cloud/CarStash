@@ -96,32 +96,45 @@ class SyncQueue:
                 with open(self.state_path) as f:
                     for d in json.load(f).get("items", []):
                         item = QueueItem(**d)
-                        # Any in-flight state at startup → reset to retry-safe state
+                        # In-flight push/transcode at startup → retry-safe state
                         if item.state in ("pushing", "transcoding"):
                             item.state = "interrupted" if item.transcoded_path else "queued"
                             item.touch()
+                            logger.info(f"[{item.id}] Reset {d['state']} → {item.state} after restart")
+                        # Transcoded file disappeared (e.g. cache dir cleared) → re-transcode
+                        elif item.state in ("ready", "interrupted") and item.transcoded_path and not os.path.exists(item.transcoded_path):
+                            logger.warning(f"[{item.id}] Transcoded file missing ({item.transcoded_path}) — re-queuing")
+                            item.state = "queued"
+                            item.transcoded_path = None
+                            item.push_progress = 0.0
+                            item.touch()
                         self._items[item.id] = item
-                logger.info(f"Loaded {len(self._items)} queue items")
+                counts = {s: sum(1 for i in self._items.values() if i.state == s) for s in STATES if any(i.state == s for i in self._items.values())}
+                logger.info(f"Loaded {len(self._items)} queue items — {counts}")
             except Exception as e:
                 logger.error(f"Failed to load queue state: {e}")
 
     def _save(self):
         data = {"items": [i.to_dict() for i in self._items.values()]}
-        # Write to a secure temporary file in the same directory, then atomically replace.
         state_dir = os.path.dirname(self.state_path) or "."
+        tmp = None
         with tempfile.NamedTemporaryFile(mode="w", dir=state_dir, delete=False) as tf:
             tmp = tf.name
             json.dump(data, tf, indent=2)
         try:
-            # Restrict permissions on the temp file
             try:
                 os.chmod(tmp, 0o600)
             except Exception:
                 pass
-            os.replace(tmp, self.state_path)  # atomic write
-        finally:
-            # If replace failed leave a clear error but don't attempt to unlink here
-            pass
+            os.replace(tmp, self.state_path)
+            tmp = None  # replace succeeded — nothing to clean up
+        except Exception:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            raise
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -149,7 +162,8 @@ class SyncQueue:
                 self._save()
 
     def get(self, item_id: str) -> Optional[QueueItem]:
-        return self._items.get(item_id)
+        with self._lock:
+            return self._items.get(item_id)
 
     def list_all(self) -> list[QueueItem]:
         with self._lock:
@@ -169,10 +183,12 @@ class SyncQueue:
             candidates = [i for i in self._items.values() if i.state in ("ready", "interrupted")]
             if not candidates:
                 return None
-            return max(candidates, key=lambda i: (i.priority, i.push_attempts == 0))
+            # Sort by priority only — no secondary key that starves interrupted items
+            return max(candidates, key=lambda i: i.priority)
 
     def set_state(self, item_id: str, state: str, **kwargs):
-        assert state in STATES, f"Unknown state: {state}"
+        if state not in STATES:
+            raise ValueError(f"Unknown state: {state!r}")
         with self._lock:
             item = self._items.get(item_id)
             if item:

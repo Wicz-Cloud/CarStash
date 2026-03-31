@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from .queue import SyncQueue
-from .transcode import Transcoder, probe
+from .transcode import Transcoder
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,6 @@ class TranscodeWorker:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._current_item_id: Optional[str] = None
-        self._transcoder = Transcoder()
         os.makedirs(cache_dir, exist_ok=True)
 
     @property
@@ -119,18 +118,14 @@ class TranscodeWorker:
         if not os.path.exists(item.source_path):
             raise FileNotFoundError(f"Source not found: {item.source_path}")
 
-        # Probe to decide if we even need to transcode
-        probe(item.source_path)
-
         # Submit transcode job and wait for completion
-        import threading
         done = threading.Event()
         result = [None]
 
         def on_progress(job):
             if hasattr(job, 'progress'):
                 self.queue.set_state(item.id, "transcoding", transcode_progress=round(job.progress, 1))
-            if job.status in ("done", "error", "cancelled"):
+            if job.status in ("done", "skipped", "error", "cancelled"):
                 result[0] = job
                 done.set()
 
@@ -143,7 +138,15 @@ class TranscodeWorker:
             on_progress=on_progress,
         )
         done.wait()
-        if result[0] is None or result[0].status != "done":
-            err = result[0].error if result[0] else "unknown error"
+
+        job = result[0]
+        if job is None or job.status not in ("done", "skipped"):
+            err = job.error if job else "unknown error"
             raise RuntimeError(f"Transcode failed: {err}")
+
+        if job.status == "skipped":
+            # File is already Pi-compatible — push the source directly
+            logger.info(f"[{item.id}] Source is already compatible — skipping transcode")
+            return item.source_path
+
         return cached

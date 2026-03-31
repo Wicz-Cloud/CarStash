@@ -394,6 +394,38 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
 @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
 
+/* ── LOG VIEWER ── */
+.log-terminal {
+  background: var(--bg); border-radius: 4px; padding: 12px 14px;
+  height: 60vh; min-height: 200px; overflow-y: auto;
+  font-family: var(--font-m); font-size: 12px; line-height: 1.55;
+}
+.log-line { color: var(--muted2); word-break: break-all; white-space: pre-wrap; }
+.log-line.info    { color: var(--muted2); }
+.log-line.warn    { color: var(--accent); }
+.log-line.error   { color: var(--red); }
+.log-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg3);
+  flex-wrap: wrap;
+}
+.log-status {
+  font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px;
+}
+.log-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0;
+}
+.log-dot.live   { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s ease-in-out infinite; }
+.log-dot.error  { background: var(--red); }
+.log-filter { display: flex; gap: 4px; margin-left: auto; }
+.lf-btn {
+  padding: 3px 8px; border-radius: 3px; font-family: var(--font-m); font-size: 10px;
+  background: transparent; border: 1px solid var(--border2); color: var(--muted2);
+  cursor: pointer; transition: all 0.15s;
+}
+.lf-btn:hover  { border-color: var(--text); color: var(--text); }
+.lf-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(232,184,75,0.08); }
+
 /* ── RESPONSIVE ── */
 @media (max-width: 700px) {
   :root { --sidebar: 100%; }
@@ -477,6 +509,9 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
       <div class="nav-link" data-view="transfer">
         <span class="nav-icon">📡</span><span>Transfer</span>
       </div>
+      <div class="nav-link" data-view="logs">
+        <span class="nav-icon">📋</span><span>Logs</span>
+      </div>
     </nav>
   </aside>
 
@@ -542,6 +577,31 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
           <div class="current-transfer" id="currentTransfer">
             <div class="ct-none">No active transfer.</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div id="view-logs" style="display:none">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">SERVER LOGS</span>
+          <button class="btn btn-ghost" id="clearLogsBtn" style="padding:4px 10px;font-size:11px">✕ CLEAR</button>
+        </div>
+        <div class="log-toolbar">
+          <div class="log-status">
+            <div class="log-dot" id="logDot"></div>
+            <span id="logStatusLabel">DISCONNECTED</span>
+          </div>
+          <div class="log-filter">
+            <button class="lf-btn active" data-level="all">ALL</button>
+            <button class="lf-btn" data-level="info">INFO</button>
+            <button class="lf-btn" data-level="warn">WARN</button>
+            <button class="lf-btn" data-level="error">ERROR</button>
+          </div>
+        </div>
+        <div class="panel-body" style="padding:10px">
+          <div class="log-terminal" id="logTerminal"></div>
         </div>
       </div>
     </div>
@@ -628,6 +688,8 @@ document.querySelectorAll('.nav-link').forEach(el => {
     document.getElementById('view-' + currentView).style.display = '';
     if (currentView === 'queue')    renderQueueList();
     if (currentView === 'transfer') updateTransferView(systemData);
+    if (currentView === 'logs')     { if (!logEventSource) startLogStream(); }
+    else if (logEventSource)        stopLogStream();
   });
 });
 
@@ -1078,9 +1140,102 @@ function esc(s) {
 }
 
 /* ════════════════════════════════════════
+   LOGS
+════════════════════════════════════════ */
+let logEventSource = null;
+let logAutoScroll  = true;
+let logFilter      = 'all';
+
+function logLevel(line) {
+  if (/\bERROR\b|\bCRITICAL\b/.test(line)) return 'error';
+  if (/\bWARNING\b/.test(line))             return 'warn';
+  return 'info';
+}
+
+function logVisible(level) {
+  if (logFilter === 'all')   return true;
+  if (logFilter === 'error') return level === 'error';
+  if (logFilter === 'warn')  return level === 'error' || level === 'warn';
+  return true; // 'info' shows all
+}
+
+function appendLogLine(text) {
+  const level = logLevel(text);
+  const el    = document.getElementById('logTerminal');
+  const div   = document.createElement('div');
+  div.className   = 'log-line ' + level;
+  div.dataset.lvl = level;
+  div.textContent = text;
+  div.style.display = logVisible(level) ? '' : 'none';
+  el.appendChild(div);
+  // Cap DOM at 1000 lines
+  while (el.children.length > 1000) el.removeChild(el.firstChild);
+  if (logAutoScroll) el.scrollTop = el.scrollHeight;
+}
+
+function setLogStatus(state) {
+  const dot   = document.getElementById('logDot');
+  const label = document.getElementById('logStatusLabel');
+  dot.className = 'log-dot';
+  if (state === 'live')         { dot.classList.add('live');  label.textContent = 'LIVE'; }
+  else if (state === 'error')   { dot.classList.add('error'); label.textContent = 'RECONNECTING…'; }
+  else                          { label.textContent = 'DISCONNECTED'; }
+}
+
+function startLogStream() {
+  if (logEventSource) { logEventSource.close(); logEventSource = null; }
+  setLogStatus('connecting');
+  const url = baseUrl() + '/api/logs/stream';
+  const es  = new EventSource(url);
+  logEventSource = es;
+
+  es.onopen    = () => setLogStatus('live');
+  es.onmessage = e => {
+    try { appendLogLine(JSON.parse(e.data)); } catch { appendLogLine(e.data); }
+  };
+  es.onerror   = () => {
+    setLogStatus('error');
+    es.close();
+    logEventSource = null;
+    setTimeout(() => { if (currentView === 'logs') startLogStream(); }, 4000);
+  };
+}
+
+function stopLogStream() {
+  if (logEventSource) { logEventSource.close(); logEventSource = null; }
+  setLogStatus('disconnected');
+}
+
+// Filter buttons
+document.querySelectorAll('.lf-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.lf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    logFilter = btn.dataset.level;
+    document.querySelectorAll('#logTerminal .log-line').forEach(div => {
+      div.style.display = logVisible(div.dataset.lvl) ? '' : 'none';
+    });
+    if (logAutoScroll) {
+      const el = document.getElementById('logTerminal');
+      el.scrollTop = el.scrollHeight;
+    }
+  });
+});
+
+// Auto-scroll detection
+document.getElementById('logTerminal').addEventListener('scroll', function () {
+  logAutoScroll = this.scrollHeight - this.scrollTop - this.clientHeight < 60;
+});
+
+document.getElementById('clearLogsBtn').addEventListener('click', () => {
+  document.getElementById('logTerminal').innerHTML = '';
+});
+
+/* ════════════════════════════════════════
    SERVER URL CHANGE
 ════════════════════════════════════════ */
 serverInput.addEventListener('change', () => {
+  if (logEventSource) stopLogStream();
   refreshSystem();
   navigate(currentPath);
 });

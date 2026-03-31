@@ -35,6 +35,7 @@ import re
 import threading
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import requests
@@ -45,9 +46,18 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 30  # seconds between reachability checks
 PUSH_TIMEOUT = 10  # seconds for initial connection
-STREAM_CHUNK = 256 * 1024  # 256 KB chunks during push
+STREAM_CHUNK = 4 * 1024 * 1024  # 4 MB chunks during push
 MAX_ATTEMPTS = 5  # give up after this many failed pushes
 AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN", "")
+PARALLEL_STREAMS = int(os.environ.get("CARSTASH_PARALLEL_STREAMS", "2"))
+MIN_PARALLEL_BYTES = 64 * 1024 * 1024  # only parallelize files > 64 MB remaining
+
+
+def _sanitize_header(v: str) -> str:
+    """Strip control/newline characters from header values."""
+    if v is None:
+        return ""
+    return re.sub(r"[\r\n]+", " ", str(v))[:200]
 
 
 class HeartbeatPoller:
@@ -68,14 +78,17 @@ class HeartbeatPoller:
         self._pi_reachable = False
         self._pi_free_bytes: int = 0
         self._lock = threading.Lock()
+        self._cycle_lock = threading.Lock()  # prevents concurrent _cycle() runs
 
     @property
     def pi_reachable(self) -> bool:
-        return self._pi_reachable
+        with self._lock:
+            return self._pi_reachable
 
     @property
     def pi_free_bytes(self) -> int:
-        return self._pi_free_bytes
+        with self._lock:
+            return self._pi_free_bytes
 
     def start(self):
         self._running = True
@@ -88,14 +101,24 @@ class HeartbeatPoller:
 
     def force_poll(self):
         """Trigger an immediate poll cycle (e.g. after a new item is queued)."""
-        t = threading.Thread(target=self._cycle, daemon=True)
-        t.start()
+        def _run():
+            # Non-blocking acquire: if a cycle is already running, skip this one
+            if self._cycle_lock.acquire(blocking=False):
+                try:
+                    self._cycle()
+                finally:
+                    self._cycle_lock.release()
+            else:
+                logger.debug("Poll already in progress — skipping forced cycle")
+
+        threading.Thread(target=_run, daemon=True).start()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _loop(self):
         while self._running:
-            self._cycle()
+            with self._cycle_lock:
+                self._cycle()
             time.sleep(POLL_INTERVAL)
 
     def _cycle(self):
@@ -158,15 +181,8 @@ class HeartbeatPoller:
 
     def _push_item(self, item: QueueItem, pi_free_bytes: int):
         """
-        Stream the transcoded file to the Pi, resuming from where we left off.
-
-        Flow:
-          1. Query Pi for how many bytes it already has (offset)
-          2. If offset == file_size, it's already complete — mark done
-          3. Seek to offset in the source file
-          4. Send Content-Range header so Pi knows where to append
-          5. Stream remaining bytes in chunks, updating progress
-          6. On ConnectionError → mark interrupted, Pi keeps its .tmp for next time
+        Push the transcoded file to the Pi using parallel streams for large files,
+        falling back to a single stream for small files or resumptions from near the end.
         """
         path = item.transcoded_path
         if not path or not os.path.exists(path):
@@ -174,75 +190,70 @@ class HeartbeatPoller:
             return
 
         file_size = os.path.getsize(path)
-
-        # ── Query resume offset ───────────────────────────────────────────────
         offset = self._query_offset(item.dest_filename)
 
         if offset == file_size:
-            # Pi already has the complete file (e.g. server restarted after Pi received it)
             logger.info(f"[{item.id}] Pi already has complete file — marking done")
             self.queue.set_state(item.id, "done", push_progress=100.0)
             return
 
+        remaining = file_size - offset
+
         if offset > 0:
             logger.info(
                 f"[{item.id}] Resuming from byte {offset:,} of {file_size:,} "
-                f"({offset/file_size*100:.1f}% already transferred)"
+                f"({offset / file_size * 100:.1f}% already transferred)"
             )
         else:
-            logger.info(f"[{item.id}] Starting fresh push of {item.name} ({file_size/1e6:.0f} MB)")
+            logger.info(f"[{item.id}] Starting push of {item.name} ({file_size / 1e6:.0f} MB)")
 
-        remaining = file_size - offset
-
-        # Check Pi has enough space for the remaining bytes
         if pi_free_bytes > 0 and remaining > pi_free_bytes:
             logger.warning(
-                f"[{item.id}] Pi has {pi_free_bytes/1e9:.1f} GB free, "
-                f"need {remaining/1e9:.1f} GB — Pi will evict old files"
+                f"[{item.id}] Pi has {pi_free_bytes / 1e9:.1f} GB free, "
+                f"need {remaining / 1e9:.1f} GB — Pi will evict old files"
             )
 
-        # URL-encode filename
         safe_name = urllib.parse.quote(str(item.dest_filename), safe="")
         url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}"
         self.queue.set_state(item.id, "pushing", push_attempts=item.push_attempts + 1)
 
+        # Choose number of parallel streams based on remaining data size
+        n_streams = min(PARALLEL_STREAMS, max(1, remaining // MIN_PARALLEL_BYTES))
+
+        if n_streams > 1:
+            self._push_parallel(item, path, file_size, offset, url, n_streams)
+        else:
+            self._push_sequential(item, path, file_size, offset, url)
+
+    def _push_sequential(self, item: QueueItem, path: str, file_size: int, offset: int, url: str):
+        """Send the file as a single HTTP stream (used for small files or final segments)."""
         try:
             with open(path, "rb") as f:
                 f.seek(offset)
 
-                def _chunked_generator():
+                def _gen():
                     sent = 0
                     while True:
                         chunk = f.read(STREAM_CHUNK)
                         if not chunk:
                             break
                         sent += len(chunk)
-                        # Progress accounts for bytes already on Pi from prior attempts
-                        total_sent = offset + sent
-                        progress = round(total_sent / file_size * 100, 1)
+                        progress = round((offset + sent) / file_size * 100, 1)
                         self.queue.update_push_progress(item.id, progress)
                         yield chunk
 
-                # Sanitize header values to avoid header injection
-                def _sanitize_header(v: str) -> str:
-                    if v is None:
-                        return ""
-                    # strip control/newline characters
-                    return re.sub(r"[\r\n]+", " ", str(v))[:200]
-
-                headers = {
-                    "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
-                    "Content-Type": "application/octet-stream",
-                    "X-Item-Id": _sanitize_header(item.id),
-                    "X-Item-Name": _sanitize_header(item.name),
-                    "X-CarStash-Token": AUTH_TOKEN,
-                }
-
                 resp = requests.put(
                     url,
-                    data=_chunked_generator(),
-                    headers=headers,
-                    timeout=(PUSH_TIMEOUT, None),  # (connect_timeout, read_timeout=unlimited)
+                    data=_gen(),
+                    headers={
+                        "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
+                        "Content-Length": str(file_size - offset),
+                        "Content-Type": "application/octet-stream",
+                        "X-Item-Id": _sanitize_header(item.id),
+                        "X-Item-Name": _sanitize_header(item.name),
+                        "X-CarStash-Token": AUTH_TOKEN,
+                    },
+                    timeout=(PUSH_TIMEOUT, None),
                 )
 
             if resp.status_code == 200:
@@ -252,14 +263,109 @@ class HeartbeatPoller:
                 raise RuntimeError(f"Pi returned HTTP {resp.status_code}: {resp.text[:200]}")
 
         except requests.exceptions.ConnectionError:
-            # Pi went away mid-transfer — its .tmp file has however many bytes arrived.
-            # Next heartbeat will query the offset again and resume from there.
             self.queue.set_state(item.id, "interrupted", error="Connection lost mid-transfer — will resume")
             logger.warning(f"[{item.id}] Connection lost mid-push — will resume next heartbeat")
-
         except Exception as e:
             self.queue.set_state(item.id, "interrupted", error=str(e))
             logger.error(f"[{item.id}] Push failed: {e}")
+
+    def _push_parallel(
+        self,
+        item: QueueItem,
+        path: str,
+        file_size: int,
+        offset: int,
+        url: str,
+        n_streams: int,
+    ):
+        """
+        Push the file using N parallel TCP streams.
+
+        Each stream sends a distinct, non-overlapping byte range via Content-Range.
+        The Pi must support random-access writes (agent.py ≥ parallel-capable version).
+        """
+        remaining = file_size - offset
+        seg_size = remaining // n_streams
+
+        # Build segment list: [(start, end_exclusive), ...]
+        segments = []
+        pos = offset
+        for i in range(n_streams):
+            end = file_size if i == n_streams - 1 else pos + seg_size
+            segments.append((pos, end))
+            pos = end
+
+        logger.info(
+            f"[{item.id}] Parallel push — {n_streams} streams, "
+            f"{remaining / 1e6:.0f} MB remaining"
+        )
+
+        # Shared progress counter — bytes sent in THIS push call (not including prior offset)
+        total_sent = [0]
+        sent_lock = threading.Lock()
+        errors: list[tuple[str, str]] = []
+
+        def _send_segment(seg_start: int, seg_end: int):
+            seg_len = seg_end - seg_start
+            seg_sent = [0]  # bytes sent by THIS segment (for rollback on error)
+            try:
+                with open(path, "rb") as f:
+                    f.seek(seg_start)
+
+                    def _gen():
+                        remaining_seg = seg_len
+                        while remaining_seg > 0:
+                            chunk = f.read(min(STREAM_CHUNK, remaining_seg))
+                            if not chunk:
+                                break
+                            remaining_seg -= len(chunk)
+                            seg_sent[0] += len(chunk)
+                            with sent_lock:
+                                total_sent[0] += len(chunk)
+                                progress = round((offset + total_sent[0]) / file_size * 100, 1)
+                            self.queue.update_push_progress(item.id, progress)
+                            yield chunk
+
+                    resp = requests.put(
+                        url,
+                        data=_gen(),
+                        headers={
+                            "Content-Range": f"bytes {seg_start}-{seg_end - 1}/{file_size}",
+                            "Content-Length": str(seg_len),
+                            "Content-Type": "application/octet-stream",
+                            "X-Item-Id": _sanitize_header(item.id),
+                            "X-Item-Name": _sanitize_header(item.name),
+                            "X-CarStash-Token": AUTH_TOKEN,
+                        },
+                        timeout=(PUSH_TIMEOUT, None),
+                    )
+
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Pi returned HTTP {resp.status_code}: {resp.text[:200]}")
+
+            except requests.exceptions.ConnectionError as exc:
+                with sent_lock:
+                    total_sent[0] = max(0, total_sent[0] - seg_sent[0])
+                    errors.append(("connection", str(exc)))
+            except Exception as exc:
+                with sent_lock:
+                    total_sent[0] = max(0, total_sent[0] - seg_sent[0])
+                    errors.append(("error", str(exc)))
+
+        with ThreadPoolExecutor(max_workers=n_streams) as executor:
+            futures = {executor.submit(_send_segment, s, e): (s, e) for s, e in segments}
+            for future in as_completed(futures):
+                future.result()  # surface any unhandled exceptions not caught inside
+
+        if not errors:
+            self.queue.set_state(item.id, "done", push_progress=100.0)
+            logger.info(f"[{item.id}] Parallel push complete ✓ ({n_streams} streams)")
+        elif any(e[0] == "connection" for e in errors):
+            self.queue.set_state(item.id, "interrupted", error="Connection lost mid-transfer — will resume")
+            logger.warning(f"[{item.id}] Connection lost during parallel push — will resume")
+        else:
+            self.queue.set_state(item.id, "interrupted", error=errors[0][1])
+            logger.error(f"[{item.id}] Parallel push failed: {errors[0][1]}")
 
 
 def is_pi_reachable(pi_ip: str, pi_port: int = 5001) -> bool:
@@ -274,7 +380,8 @@ def is_pi_reachable(pi_ip: str, pi_port: int = 5001) -> bool:
 
 def get_pi_offset(pi_ip: str, dest_filename: str, pi_port: int = 5001) -> int:
     """Standalone function to query the Pi for the current offset for a file."""
-    url = f"http://{pi_ip}:{pi_port}/api/receive/{dest_filename}/offset"
+    safe_name = urllib.parse.quote(dest_filename, safe="")
+    url = f"http://{pi_ip}:{pi_port}/api/receive/{safe_name}/offset"
     try:
         resp = requests.get(url, timeout=5, headers={"X-CarStash-Token": AUTH_TOKEN})
         if resp.status_code == 200:
@@ -288,8 +395,10 @@ def push_file(pi_ip: str, src_path: str, dest_filename: str, pi_port: int = 5001
     """Standalone function to push a file to the Pi, resuming from the correct offset."""
     file_size = os.path.getsize(src_path)
     offset = get_pi_offset(pi_ip, dest_filename, pi_port)
-    remaining = file_size - offset
-    url = f"http://{pi_ip}:{pi_port}/api/receive/{dest_filename}"
+    if offset >= file_size:
+        return True  # Pi already has the complete file
+    safe_name = urllib.parse.quote(dest_filename, safe="")
+    url = f"http://{pi_ip}:{pi_port}/api/receive/{safe_name}"
     try:
         with open(src_path, "rb") as f:
             f.seek(offset)
@@ -306,6 +415,7 @@ def push_file(pi_ip: str, src_path: str, dest_filename: str, pi_port: int = 5001
                 data=_chunked_generator(),
                 headers={
                     "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
+                    "Content-Length": str(file_size - offset),
                     "Content-Type": "application/octet-stream",
                     "X-CarStash-Token": AUTH_TOKEN,
                 },
