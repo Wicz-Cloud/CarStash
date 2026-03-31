@@ -56,29 +56,40 @@ MIN_PARALLEL_BYTES = 64 * 1024 * 1024  # only parallelize files > 64 MB remainin
 class _SegmentReader:
     """
     File-like wrapper that reads exactly `limit` bytes from an open file handle,
-    calling on_chunk(n) after each read.
+    calling on_chunk(n) approximately every STREAM_CHUNK bytes.
 
-    Using a file-like object (with read()) instead of a generator ensures that
-    requests/urllib3 sends a fixed-length body using Content-Length rather than
-    Transfer-Encoding: chunked.  Chunked encoding causes Flask/Werkzeug on the Pi
-    to raise "Invalid chunk header" when the TCP stream is cut mid-chunk.
+    __len__ is required: requests calls super_len() on the body to determine
+    Content-Length.  Without it, super_len() returns 0/None and requests falls
+    back to Transfer-Encoding: chunked — which causes Flask/Werkzeug on the Pi
+    to raise "Invalid chunk header" when the TCP connection is cut mid-chunk.
+    With __len__, requests sets Content-Length and urllib3 sends a plain
+    fixed-length body with no chunk framing.
     """
 
     def __init__(self, f, limit: int, on_chunk=None):
         self._f = f
+        self._limit = limit       # immutable — returned by __len__
         self._remaining = limit
         self._on_chunk = on_chunk
+        self._since_callback = 0  # bytes accumulated since last progress report
+
+    def __len__(self):
+        """Total byte count for this segment — lets requests set Content-Length."""
+        return self._limit
 
     def read(self, size=-1):
         if self._remaining <= 0:
             return b""
         to_read = self._remaining if size < 0 else min(size, self._remaining)
-        to_read = min(to_read, STREAM_CHUNK)  # cap so progress is reported every 4 MB
         chunk = self._f.read(to_read)
         if chunk:
             self._remaining -= len(chunk)
             if self._on_chunk:
-                self._on_chunk(len(chunk))
+                self._since_callback += len(chunk)
+                # Fire progress callback every ~4 MB or on the final read
+                if self._since_callback >= STREAM_CHUNK or self._remaining == 0:
+                    self._on_chunk(self._since_callback)
+                    self._since_callback = 0
         return chunk
 
 
