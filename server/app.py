@@ -23,7 +23,7 @@ from .sync.worker import TranscodeWorker
 
 STATE_FILE = os.environ.get("CARSTASH_STATE_FILE", os.path.join(tempfile.gettempdir(), "carstash_state.json"))
 CACHE_DIR = os.environ.get("CARSTASH_CACHE", os.path.join(tempfile.gettempdir(), "carstash_cache"))
-PI_IP = "127.0.0.1"
+PI_IP = os.environ.get("PI_IP", "127.0.0.1")
 PI_PORT = 5001
 LOG_DIR = os.environ.get("CARSTASH_LOG_DIR", "/mnt/carstash/logs")
 MEDIA_DIR = os.environ.get("CARSTASH_MEDIA_DIR", "/mnt/carstash/media")
@@ -83,6 +83,8 @@ poller = HeartbeatPoller(
     on_status_change=lambda reachable: logger.info(f"Pi {'ONLINE ✓' if reachable else 'OFFLINE ✗'}"),
 )
 
+poller.start()
+worker.start()
 
 @app.route("/api/queue", methods=["POST"])
 def add_to_queue():
@@ -102,6 +104,30 @@ def add_to_queue():
     poller.force_poll()
     return jsonify(item.to_dict()), 201
 
+
+
+@app.route("/api/queue/<item_id>", methods=["DELETE"])
+def delete_queue_item(item_id):
+    """Remove an item from the sync queue."""
+    if item_id not in queue._items:
+        abort(404, description="Item not found")
+    queue.remove(item_id)
+    return jsonify({"ok": True}), 200
+
+
+@app.route("/api/queue/<item_id>/retry", methods=["POST"])
+def retry_queue_item(item_id):
+    """Reset a failed or interrupted item so it will be pushed again on next heartbeat."""
+    item = queue.get(item_id)
+    if item is None:
+        abort(404, description="Item not found")
+    if item.state not in ("failed", "interrupted", "done"):
+        abort(400, description=f"Item is '{item.state}', only failed/interrupted/done items can be retried")
+    # If transcoded file is gone, fall back to re-transcode from source
+    new_state = "interrupted" if (item.transcoded_path and os.path.exists(item.transcoded_path)) else "queued"
+    queue.set_state(item_id, new_state, push_attempts=0, error=None)
+    poller.force_poll()
+    return jsonify({"ok": True, "new_state": new_state}), 200
 
 @app.route("/api/browse", methods=["GET"])
 def browse():
@@ -165,7 +191,7 @@ def health():
 
 @app.route("/api/queue", methods=["GET"])
 def list_queue():
-    return jsonify([i.to_dict() for i in queue.items()])
+    return jsonify([i.to_dict() for i in queue._items.values()])
 
 @app.route("/")
 def index():

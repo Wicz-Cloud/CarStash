@@ -41,6 +41,7 @@ class QueueItem:
     size_bytes: int = 0
     push_attempts: int = 0
     push_progress: float = 0.0  # 0.0–100.0 during active push
+    transcode_progress: float = 0.0  # 0.0–100.0 during transcode
     error: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())

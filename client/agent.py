@@ -122,10 +122,14 @@ def receive_file(filename):
     else:
         total_size = request.content_length or 0
 
-    content_length = request.content_length or 0
+    # Content-Length is absent for chunked transfers — fall back to remaining
+    # bytes derived from Content-Range so eviction still works correctly.
+    content_length = request.content_length
+    if not content_length and total_size > 0:
+        content_length = total_size - offset
 
     # ── Evict if needed ───────────────────────────────────────────────────────
-    if content_length > 0:
+    if content_length:
         _evict_if_needed(content_length)
 
     # ── Validate offset matches disk ──────────────────────────────────────────

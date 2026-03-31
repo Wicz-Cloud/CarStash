@@ -291,8 +291,10 @@ class Transcoder:
                     on_progress(job)
                 return
 
-            # 3. Build ffmpeg command
-            cmd = self._build_cmd(job.input_path, job.output_path, job.quality, info)
+            # 3. Build ffmpeg command — write to a .tmp path, rename on success
+            #    so an interrupted transcode never leaves a corrupt cache file.
+            tmp_output = job.output_path + ".tmp"
+            cmd = self._build_cmd(job.input_path, tmp_output, job.quality, info)
             logger.info(f"[{job.job_id}] Running: {' '.join(cmd)}")
 
             # 4. Ensure output directory exists
@@ -306,9 +308,12 @@ class Transcoder:
                 job.status = "error"
                 job.error = "Cancelled by user"
                 # Clean up partial output
-                if os.path.exists(job.output_path):
-                    os.remove(job.output_path)
+                if os.path.exists(tmp_output):
+                    os.remove(tmp_output)
             else:
+                # Atomic rename: only a complete file lands at the real path
+                if os.path.exists(tmp_output):
+                    os.replace(tmp_output, job.output_path)
                 job.status = "done"
                 job.progress = 100.0
                 if os.path.exists(job.output_path):

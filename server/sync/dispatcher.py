@@ -47,6 +47,7 @@ POLL_INTERVAL = 30  # seconds between reachability checks
 PUSH_TIMEOUT = 10  # seconds for initial connection
 STREAM_CHUNK = 256 * 1024  # 256 KB chunks during push
 MAX_ATTEMPTS = 5  # give up after this many failed pushes
+AUTH_TOKEN = os.environ.get("CARSTASH_AUTH_TOKEN", "")
 
 
 class HeartbeatPoller:
@@ -130,7 +131,7 @@ class HeartbeatPoller:
         """Returns (reachable, free_bytes). free_bytes=0 if not reachable."""
         url = f"http://{self.pi_ip}:{self.pi_port}/api/status"
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=5, headers={"X-CarStash-Token": AUTH_TOKEN})
             if resp.status_code == 200:
                 data = resp.json()
                 return True, data.get("free_bytes", 0)
@@ -148,7 +149,7 @@ class HeartbeatPoller:
         safe_name = urllib.parse.quote(str(filename), safe="")
         url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}/offset"
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=5, headers={"X-CarStash-Token": AUTH_TOKEN})
             if resp.status_code == 200:
                 return int(resp.json().get("offset", 0))
         except Exception:
@@ -231,10 +232,10 @@ class HeartbeatPoller:
 
                 headers = {
                     "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
-                    "Content-Length": str(remaining),
                     "Content-Type": "application/octet-stream",
                     "X-Item-Id": _sanitize_header(item.id),
                     "X-Item-Name": _sanitize_header(item.name),
+                    "X-CarStash-Token": AUTH_TOKEN,
                 }
 
                 resp = requests.put(
@@ -242,7 +243,6 @@ class HeartbeatPoller:
                     data=_chunked_generator(),
                     headers=headers,
                     timeout=(PUSH_TIMEOUT, None),  # (connect_timeout, read_timeout=unlimited)
-                    stream=True,
                 )
 
             if resp.status_code == 200:
@@ -266,7 +266,7 @@ def is_pi_reachable(pi_ip: str, pi_port: int = 5001) -> bool:
     """Standalone function for testability: returns True if Pi responds to /api/status."""
     url = f"http://{pi_ip}:{pi_port}/api/status"
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, headers={"X-CarStash-Token": AUTH_TOKEN})
         return resp.status_code == 200
     except Exception:
         return False
@@ -276,7 +276,7 @@ def get_pi_offset(pi_ip: str, dest_filename: str, pi_port: int = 5001) -> int:
     """Standalone function to query the Pi for the current offset for a file."""
     url = f"http://{pi_ip}:{pi_port}/api/receive/{dest_filename}/offset"
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, headers={"X-CarStash-Token": AUTH_TOKEN})
         if resp.status_code == 200:
             return int(resp.json().get("offset", 0))
     except Exception:
@@ -306,11 +306,10 @@ def push_file(pi_ip: str, src_path: str, dest_filename: str, pi_port: int = 5001
                 data=_chunked_generator(),
                 headers={
                     "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
-                    "Content-Length": str(remaining),
-                    "Content-Type": "application/octet-stream",  # comment
+                    "Content-Type": "application/octet-stream",
+                    "X-CarStash-Token": AUTH_TOKEN,
                 },
                 timeout=(PUSH_TIMEOUT, None),
-                stream=True,
             )
         return resp.status_code == 200
     except Exception:

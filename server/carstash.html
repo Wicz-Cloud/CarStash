@@ -266,25 +266,32 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
 .queue-item:last-child { border-bottom: none; }
 .queue-item:hover { background: var(--bg3); }
 .qi-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
-.qi-status.queued   { background: var(--muted); }
-.qi-status.pending  { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.4s ease-in-out infinite; }
-.qi-status.sending  { background: var(--blue);   box-shadow: 0 0 6px var(--blue);   animation: blink 0.9s ease-in-out infinite; }
-.qi-status.done     { background: var(--green); }
-.qi-status.error    { background: var(--red); }
+.qi-status.queued       { background: var(--muted); }
+.qi-status.ready        { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.4s ease-in-out infinite; }
+.qi-status.transcoding  { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.4s ease-in-out infinite; }
+.qi-status.pushing      { background: var(--blue);   box-shadow: 0 0 6px var(--blue);   animation: blink 0.9s ease-in-out infinite; }
+.qi-status.interrupted  { background: var(--accent2); }
+.qi-status.done         { background: var(--green); }
+.qi-status.failed       { background: var(--red); }
 .qi-info { flex: 1; min-width: 0; }
 .qi-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qi-meta { font-size: 10px; color: var(--muted); margin-top: 2px; display: flex; gap: 10px; }
+.qi-meta { font-size: 10px; color: var(--muted); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+.qi-error { font-size: 10px; color: var(--red); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qi-progress-wrap { width: 90px; flex-shrink: 0; }
 .qi-progress-bar { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-bottom: 3px; }
 .qi-progress-fill { height: 100%; border-radius: 2px; background: var(--blue); transition: width 0.5s ease; }
 .qi-progress-fill.done { background: var(--green); }
+.qi-progress-fill.transcoding { background: var(--accent); }
 .qi-pct { font-size: 10px; color: var(--muted2); text-align: right; }
-.qi-remove {
+.qi-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.qi-remove, .qi-retry {
   background: transparent; border: none; color: var(--muted);
-  cursor: pointer; font-size: 14px; padding: 4px; border-radius: 3px;
-  transition: color 0.15s; flex-shrink: 0; line-height: 1;
+  cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: 3px;
+  transition: color 0.15s; line-height: 1;
 }
 .qi-remove:hover { color: var(--red); }
+.qi-retry { font-size: 11px; border: 1px solid var(--border2); color: var(--muted2); }
+.qi-retry:hover { color: var(--accent); border-color: var(--accent); }
 .queue-empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 12px; }
 
 /* ── TRANSFER VIEW ── */
@@ -429,7 +436,7 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
     <div class="logo">Car<em>Stash</em></div>
     <div class="server-input-wrap">
       <label>SERVER</label>
-      <input type="text" id="serverUrl" value="http://localhost:5000" placeholder="http://192.168.1.x:5000">
+      <input type="text" id="serverUrl" value="" placeholder="http://192.168.1.x:5000" placeholder="http://192.168.1.x:5000">
     </div>
     <div class="header-gap"></div>
     <div class="pi-pill" id="piPill">
@@ -484,7 +491,7 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
           <button class="btn btn-ghost" id="refreshBrowserBtn" style="padding:4px 10px;font-size:11px">↻ REFRESH</button>
         </div>
         <div class="browser-path-bar">
-          <input class="browser-path-input" id="pathInput" value="/mnt/carstash/media" placeholder="/path/to/media">
+          <input class="browser-path-input" id="pathInput" value="/media/bill" placeholder="/path/to/media">
           <button class="icon-btn" id="upBtn" title="Go up">↑</button>
           <button class="icon-btn" id="goBtn" title="Navigate">→</button>
         </div>
@@ -588,14 +595,14 @@ main { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; g
 /* ════════════════════════════════════════
    STATE
 ════════════════════════════════════════ */
-let currentPath  = '/mnt/carstash/media';
-let currentView  = 'browser';
+let currentPath     = '/media/bill';
+let currentView     = 'browser';
 let selectedQuality = 'balanced';
-let queueItems   = [];   // local cache; populated from POST responses + GET /api/queue if available
-let systemData   = null;
+let queueItems      = [];
+let systemData      = null;
 
 const serverInput = document.getElementById('serverUrl');
-function baseUrl() { return serverInput.value.replace(/\/$/, ''); }
+function baseUrl() { return (serverInput.value || window.location.origin).replace(/\/$/, ''); }
 
 /* ════════════════════════════════════════
    API
@@ -619,8 +626,8 @@ document.querySelectorAll('.nav-link').forEach(el => {
     currentView = el.dataset.view;
     document.querySelectorAll('[id^="view-"]').forEach(v => v.style.display = 'none');
     document.getElementById('view-' + currentView).style.display = '';
-    if (currentView === 'queue')    refreshQueue();
-    if (currentView === 'transfer') refreshSystem();
+    if (currentView === 'queue')    renderQueueList();
+    if (currentView === 'transfer') updateTransferView(systemData);
   });
 });
 
@@ -637,7 +644,7 @@ document.querySelectorAll('.q-btn').forEach(btn => {
 });
 
 /* ════════════════════════════════════════
-   SYSTEM / POLL
+   SYSTEM POLL
 ════════════════════════════════════════ */
 async function refreshSystem() {
   try {
@@ -655,7 +662,7 @@ function setPiPill(reachable) {
   const pill  = document.getElementById('piPill');
   const label = document.getElementById('piLabel');
   pill.className = 'pi-pill';
-  if (reachable === true)  { pill.classList.add('online');  label.textContent = 'PI ONLINE'; }
+  if (reachable === true)       { pill.classList.add('online');  label.textContent = 'PI ONLINE'; }
   else if (reachable === false) { pill.classList.add('offline'); label.textContent = 'PI OFFLINE'; }
   else label.textContent = 'UNREACHABLE';
 }
@@ -684,6 +691,7 @@ function updateSidebarStats(data) {
 }
 
 function updateTransferView(data) {
+  if (!data) return;
   const piEl = document.getElementById('tsPiStatus');
   piEl.textContent = data.pi_reachable ? 'ONLINE' : 'OFFLINE';
   piEl.className   = 'ts-value ' + (data.pi_reachable ? 'green' : 'red');
@@ -700,18 +708,66 @@ function updateTransferView(data) {
 
 function renderActiveTransfer(data) {
   const wrap = document.getElementById('currentTransfer');
-  const id   = data.current_transcode;
-  if (!id) { wrap.innerHTML = '<div class="ct-none">No active transfer.</div>'; return; }
-  const item = queueItems.find(i => i.id === id);
-  const name = item?.name || id;
-  const pct  = item?.progress ?? 0;
-  wrap.innerHTML = `
-    <div class="ct-header">
-      <div class="ct-name">${esc(name)}</div>
-      <div class="ct-tag">TRANSCODING · ${item?.quality || selectedQuality}</div>
-    </div>
-    <div class="ct-bar"><div class="ct-bar-fill" style="width:${pct}%"></div></div>
-    <div class="ct-footer"><span>In progress</span><span>${pct}%</span></div>`;
+
+  // Check for active push first (more common during normal operation)
+  const pushing = queueItems.find(i => i.state === 'pushing');
+  if (pushing) {
+    const pct = Math.round(pushing.push_progress ?? 0);
+    const sent = pushing.size_bytes ? fmt(pushing.size_bytes * pct / 100) : '—';
+    const total = pushing.size_bytes ? fmt(pushing.size_bytes) : '—';
+    wrap.innerHTML = `
+      <div class="ct-header">
+        <div class="ct-name">${esc(pushing.name || pushing.id)}</div>
+        <div class="ct-tag">PUSHING TO PI · attempt ${pushing.push_attempts ?? 1}</div>
+      </div>
+      <div class="ct-bar"><div class="ct-bar-fill" style="width:${pct}%"></div></div>
+      <div class="ct-footer"><span>${sent} / ${total}</span><span>${pct}%</span></div>`;
+    return;
+  }
+
+  // Check for active transcode
+  const transcoding = data?.current_transcode
+    ? queueItems.find(i => i.id === data.current_transcode)
+    : queueItems.find(i => i.state === 'transcoding');
+  if (transcoding) {
+    const pct = Math.round(transcoding.transcode_progress ?? 0);
+    wrap.innerHTML = `
+      <div class="ct-header">
+        <div class="ct-name">${esc(transcoding.name || transcoding.id)}</div>
+        <div class="ct-tag">TRANSCODING · ${esc(transcoding.quality || '—')}</div>
+      </div>
+      <div class="ct-bar"><div class="ct-bar-fill" style="width:${pct}%"></div></div>
+      <div class="ct-footer"><span>Encoding…</span><span>${pct}%</span></div>`;
+    return;
+  }
+
+  // Show last completed / failed item for context
+  const last = queueItems
+    .filter(i => i.state === 'done' || i.state === 'failed' || i.state === 'interrupted')
+    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))[0];
+  if (last) {
+    const isDone = last.state === 'done';
+    const isFailed = last.state === 'failed';
+    const colour = isDone ? 'var(--green)' : isFailed ? 'var(--red)' : 'var(--accent2)';
+    const tag = isDone ? '✓ DONE ON PI'
+               : isFailed ? `✕ FAILED · ${esc(last.error || 'unknown error')}`
+               : `⚠ INTERRUPTED · ${esc(last.error || '')}`;
+    const total = last.size_bytes ? fmt(last.size_bytes) : '—';
+    const when = last.done_at || last.updated_at
+      ? new Date(last.done_at || last.updated_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+      : '';
+    wrap.innerHTML = `
+      <div class="ct-header">
+        <div class="ct-name">${esc(last.name || last.id)}</div>
+        <div class="ct-tag" style="color:${colour}">${tag}</div>
+      </div>
+      <div class="ct-bar"><div class="ct-bar-fill" style="width:100%;background:${colour};opacity:0.5"></div></div>
+      <div class="ct-footer" style="color:var(--muted2)"><span>${total}</span><span>${when}</span></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted2)">No active transfer — queue is idle.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = '<div class="ct-none">No active transfer.</div>';
 }
 
 /* ════════════════════════════════════════
@@ -775,7 +831,6 @@ function renderFileList(entries) {
   entries.forEach(e => {
     const li = document.createElement('li');
     li.className = 'file-row' + (e.is_dir ? ' is-dir' : '');
-
     if (e.is_dir) {
       li.innerHTML = `<span class="file-icon">📁</span>
         <span class="file-name">${esc(e.name)}</span>
@@ -864,7 +919,7 @@ async function submitQueue() {
   if (!payload.name) { toast('Output filename is required.', 'error'); btn.disabled = false; return; }
   try {
     const item = await api('/api/queue', { method: 'POST', body: JSON.stringify(payload) });
-    queueItems.push({ ...item, progress: 0 });
+    queueItems.push(item);
     updateQueueBadge();
     closeModal();
     toast(`Added: ${payload.name}`, 'success');
@@ -881,19 +936,23 @@ async function submitQueue() {
 document.getElementById('refreshQueueBtn').addEventListener('click', refreshQueue);
 
 async function refreshQueue() {
-  // GET /api/queue is not yet in app.py.
-  // Add this route to server/app.py to enable live queue listing:
-  //
-  //   @app.route("/api/queue", methods=["GET"])
-  //   def list_queue():
-  //       return jsonify([i.to_dict() for i in queue.items()])
-  //
-  // Until then, the UI falls back to the local in-session cache.
   try {
     const data = await api('/api/queue');
-    if (Array.isArray(data)) { queueItems = data; updateQueueBadge(); }
-  } catch { /* endpoint not yet implemented */ }
-  renderQueueList();
+    if (Array.isArray(data)) {
+      queueItems = data;
+      updateQueueBadge();
+    }
+  } catch { /* server unreachable */ }
+  if (currentView === 'queue') renderQueueList();
+  if (currentView === 'transfer') updateTransferView(systemData);
+}
+
+function stateLabel(state) {
+  const map = {
+    queued: 'QUEUED', transcoding: 'TRANSCODING', ready: 'READY',
+    pushing: 'PUSHING', interrupted: 'INTERRUPTED', failed: 'FAILED', done: 'DONE'
+  };
+  return map[state] || state.toUpperCase();
 }
 
 function renderQueueList() {
@@ -902,45 +961,100 @@ function renderQueueList() {
     list.innerHTML = '<li class="queue-empty">Queue is empty — browse and add files.</li>';
     return;
   }
+
+  // Preserve scroll position
+  const prev = list.scrollTop;
+
   list.innerHTML = queueItems.map(item => {
-    const pct = item.progress ?? (item.status === 'done' ? 100 : 0);
-    const st  = item.status || 'queued';
+    const state = item.state || 'queued';
+    const pct   = state === 'pushing'     ? Math.round(item.push_progress      ?? 0)
+                : state === 'transcoding' ? Math.round(item.transcode_progress  ?? 0)
+                : state === 'done'        ? 100 : 0;
+    const fillClass = state === 'done' ? 'done' : state === 'transcoding' ? 'transcoding' : '';
+    const canRetry  = state === 'failed' || state === 'interrupted' || state === 'done';
+    const errLine   = item.error && state !== 'done'
+      ? `<div class="qi-error" title="${esc(item.error)}">⚠ ${esc(item.error)}</div>` : '';
+
     return `<li class="queue-item" data-id="${esc(item.id)}">
-      <div class="qi-status ${esc(st)}"></div>
+      <div class="qi-status ${esc(state)}"></div>
       <div class="qi-info">
-        <div class="qi-name">${esc(item.name || item.id)}</div>
+        <div class="qi-name" title="${esc(item.name || item.id)}">${esc(item.name || item.id)}</div>
         <div class="qi-meta">
           <span>⚙ ${esc(item.quality || '—')}</span>
           <span>P${item.priority ?? 0}</span>
-          <span>${esc(st)}</span>
+          <span>${stateLabel(state)}</span>
+          ${state === 'pushing' ? `<span>${Math.round(item.push_progress ?? 0)}% · attempt ${item.push_attempts ?? 1}</span>` : ''}
+          ${state === 'transcoding' ? `<span>${Math.round(item.transcode_progress ?? 0)}%</span>` : ''}
         </div>
+        ${errLine}
       </div>
       <div class="qi-progress-wrap">
         <div class="qi-progress-bar">
-          <div class="qi-progress-fill ${st === 'done' ? 'done' : ''}" style="width:${pct}%"></div>
+          <div class="qi-progress-fill ${fillClass}" style="width:${pct}%"></div>
         </div>
-        <div class="qi-pct">${pct}%</div>
+        <div class="qi-pct">${state === 'done' ? '✓' : pct + '%'}</div>
       </div>
-      <button class="qi-remove" title="Remove">✕</button>
+      <div class="qi-actions">
+        ${canRetry ? `<button class="qi-retry" title="Retry" data-id="${esc(item.id)}">↺ RETRY</button>` : ''}
+        <button class="qi-remove" title="Remove" data-id="${esc(item.id)}">✕</button>
+      </div>
     </li>`;
   }).join('');
 
+  list.scrollTop = prev;
+
   list.querySelectorAll('.qi-remove').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.closest('.queue-item').dataset.id;
-      queueItems = queueItems.filter(i => String(i.id) !== id);
-      updateQueueBadge();
-      renderQueueList();
-      toast('Removed from local view.', 'info');
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      try {
+        await api('/api/queue/' + id, { method: 'DELETE' });
+        queueItems = queueItems.filter(i => String(i.id) !== id);
+        updateQueueBadge();
+        renderQueueList();
+        toast('Removed from queue.', 'success');
+      } catch {
+        toast('Failed to remove item.', 'error');
+      }
+    });
+  });
+
+  list.querySelectorAll('.qi-retry').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      try {
+        const res = await api('/api/queue/' + id + '/retry', { method: 'POST' });
+        toast(`Retrying — state reset to ${res.new_state}.`, 'success');
+        await refreshQueue();
+      } catch {
+        toast('Failed to retry item.', 'error');
+      }
     });
   });
 }
 
 function updateQueueBadge() {
-  const n = queueItems.filter(i => i.status !== 'done' && i.status !== 'error').length;
+  const active = ['queued','transcoding','ready','pushing','interrupted'];
+  const n = queueItems.filter(i => active.includes(i.state)).length;
   const badge = document.getElementById('queueBadge');
   badge.textContent = n;
   badge.style.display = n > 0 ? '' : 'none';
+}
+
+/* ════════════════════════════════════════
+   ADAPTIVE POLLING
+════════════════════════════════════════ */
+function hasActiveTransfer() {
+  return queueItems.some(i => i.state === 'pushing' || i.state === 'transcoding');
+}
+
+let _queuePollTimer = null;
+function scheduleQueuePoll() {
+  clearTimeout(_queuePollTimer);
+  const delay = hasActiveTransfer() ? 3_000 : 10_000;
+  _queuePollTimer = setTimeout(async () => {
+    await refreshQueue();
+    scheduleQueuePoll();
+  }, delay);
 }
 
 /* ════════════════════════════════════════
@@ -978,9 +1092,10 @@ document.getElementById('refreshTransferBtn').addEventListener('click', refreshS
 ════════════════════════════════════════ */
 (async function init() {
   await refreshSystem();
+  await refreshQueue();
   await navigate(currentPath);
   setInterval(refreshSystem, 15_000);
-  setInterval(() => { if (currentView === 'queue') refreshQueue(); }, 10_000);
+  scheduleQueuePoll();
 })();
 </script>
 </body>

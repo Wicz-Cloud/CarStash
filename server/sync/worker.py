@@ -12,6 +12,8 @@ source is requested again (keyed by source path + quality).
 import hashlib
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -26,6 +28,22 @@ logger = logging.getLogger(__name__)
 # Use system temp dir as default for cache, not hardcoded /tmp
 CACHE_DIR = os.environ.get("PLEXSYNC_CACHE", os.path.join(tempfile.gettempdir(), "plexsync_cache"))
 POLL_SLEEP = 5  # seconds to wait between queue checks when idle
+
+
+def _is_valid_mp4(path: str) -> bool:
+    """Return True if the file is a readable, structurally complete MP4."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return True  # can't check — assume valid
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default", path],
+            capture_output=True, text=True, timeout=15,
+        )
+        return result.returncode == 0 and "duration" in result.stdout
+    except Exception:
+        return False
 
 
 def _cache_key(source_path: str, quality: str) -> str:
@@ -91,8 +109,12 @@ class TranscodeWorker:
         cached = self.cache_path_for(item.source_path, item.quality)
 
         if os.path.exists(cached):
-            logger.info(f"[{item.id}] Cache hit: {cached}")
-            return cached
+            if _is_valid_mp4(cached):
+                logger.info(f"[{item.id}] Cache hit: {cached}")
+                return cached
+            else:
+                logger.warning(f"[{item.id}] Cached file is corrupt (moov atom missing) — deleting and re-transcoding: {cached}")
+                os.remove(cached)
 
         if not os.path.exists(item.source_path):
             raise FileNotFoundError(f"Source not found: {item.source_path}")
@@ -100,6 +122,28 @@ class TranscodeWorker:
         # Probe to decide if we even need to transcode
         probe(item.source_path)
 
-        # Placeholder: actual transcode logic goes here
-        # For now, raise if not supported
-        raise NotImplementedError("Transcoding not implemented in this stub")
+        # Submit transcode job and wait for completion
+        import threading
+        done = threading.Event()
+        result = [None]
+
+        def on_progress(job):
+            if hasattr(job, 'progress'):
+                self.queue.set_state(item.id, "transcoding", transcode_progress=round(job.progress, 1))
+            if job.status in ("done", "error", "cancelled"):
+                result[0] = job
+                done.set()
+
+        transcoder = Transcoder()
+        transcoder.submit(
+            job_id=item.id,
+            input_path=item.source_path,
+            output_path=cached,
+            quality=item.quality,
+            on_progress=on_progress,
+        )
+        done.wait()
+        if result[0] is None or result[0].status != "done":
+            err = result[0].error if result[0] else "unknown error"
+            raise RuntimeError(f"Transcode failed: {err}")
+        return cached
