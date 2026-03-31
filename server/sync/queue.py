@@ -201,11 +201,16 @@ class SyncQueue:
                 self._save()
 
     def update_push_progress(self, item_id: str, progress: float):
-        """Called frequently during a push — updates in memory only, no disk write."""
-        item = self._items.get(item_id)
-        if item:
-            item.push_progress = progress
-            item.touch()
+        """Called frequently during a push — updates in memory, and persists every 5% to survive page refresh."""
+        with self._lock:
+            item = self._items.get(item_id)
+            if item:
+                prev = item.push_progress
+                item.push_progress = progress
+                item.touch()
+                # Persist to disk when crossing a 5% boundary so a page refresh shows real progress
+                if int(progress / 5) > int(prev / 5):
+                    self._save()
 
     def stats(self) -> dict:
         with self._lock:

@@ -221,6 +221,7 @@ def receive_file(filename):
     logger.info(f"Receiving '{safe_name}' — writing {action} of {total_size / 1e6:.1f} MB")
 
     bytes_written = 0
+    write_exc = None
     try:
         fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT, 0o600)
         try:
@@ -232,35 +233,44 @@ def receive_file(filename):
                     n += written
                 bytes_written += len(chunk)
                 pos += len(chunk)
+        except Exception as e:
+            write_exc = e
         finally:
             os.close(fd)
     except Exception as e:
-        logger.error(f"Receive error for {safe_name}: {e}")
-        abort(500, description=str(e))
+        write_exc = e
 
     # ── Update meta and check for completion ──────────────────────────────────
+    # Always update meta with bytes actually written, even if the stream was
+    # interrupted mid-transfer.  Without this, a failed PUT leaves segments=[]
+    # and the next /offset query returns 0, restarting the transfer from scratch.
     is_complete = False
     seq_off = 0
-    with file_lock:
-        meta = _load_meta(tmp_path)
-        actual_end = start_byte + bytes_written
-        meta["segments"] = _merge_segments(meta.get("segments", []) + [[start_byte, actual_end]])
-        seq_off = _sequential_offset(meta)
-        is_complete = total_size > 0 and seq_off >= total_size
-        if is_complete:
-            os.replace(tmp_path, final_path)
-            try:
-                os.remove(_meta_path(tmp_path))
-            except OSError:
-                pass
-            logger.info(f"Transfer complete: {safe_name} ({total_size / 1e6:.1f} MB) ✓")
-        else:
-            _save_meta(tmp_path, meta)
-            if total_size > 0:
-                logger.info(
-                    f"Partial receive: {seq_off / 1e6:.1f} / {total_size / 1e6:.1f} MB "
-                    f"({seq_off / total_size * 100:.1f}%)"
-                )
+    if bytes_written > 0:
+        with file_lock:
+            meta = _load_meta(tmp_path)
+            actual_end = start_byte + bytes_written
+            meta["segments"] = _merge_segments(meta.get("segments", []) + [[start_byte, actual_end]])
+            seq_off = _sequential_offset(meta)
+            is_complete = total_size > 0 and seq_off >= total_size
+            if is_complete:
+                os.replace(tmp_path, final_path)
+                try:
+                    os.remove(_meta_path(tmp_path))
+                except OSError:
+                    pass
+                logger.info(f"Transfer complete: {safe_name} ({total_size / 1e6:.1f} MB) ✓")
+            else:
+                _save_meta(tmp_path, meta)
+                if total_size > 0:
+                    logger.info(
+                        f"Partial receive: {seq_off / 1e6:.1f} / {total_size / 1e6:.1f} MB "
+                        f"({seq_off / total_size * 100:.1f}%)"
+                    )
+
+    if write_exc is not None:
+        logger.error(f"Receive error for {safe_name}: {write_exc}")
+        abort(500, description=str(write_exc))
 
     if is_complete:
         media_adapter.refresh_library()

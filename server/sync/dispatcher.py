@@ -53,6 +53,35 @@ PARALLEL_STREAMS = int(os.environ.get("CARSTASH_PARALLEL_STREAMS", "2"))
 MIN_PARALLEL_BYTES = 64 * 1024 * 1024  # only parallelize files > 64 MB remaining
 
 
+class _SegmentReader:
+    """
+    File-like wrapper that reads exactly `limit` bytes from an open file handle,
+    calling on_chunk(n) after each read.
+
+    Using a file-like object (with read()) instead of a generator ensures that
+    requests/urllib3 sends a fixed-length body using Content-Length rather than
+    Transfer-Encoding: chunked.  Chunked encoding causes Flask/Werkzeug on the Pi
+    to raise "Invalid chunk header" when the TCP stream is cut mid-chunk.
+    """
+
+    def __init__(self, f, limit: int, on_chunk=None):
+        self._f = f
+        self._remaining = limit
+        self._on_chunk = on_chunk
+
+    def read(self, size=-1):
+        if self._remaining <= 0:
+            return b""
+        to_read = self._remaining if size < 0 else min(size, self._remaining)
+        to_read = min(to_read, STREAM_CHUNK)  # cap so progress is reported every 4 MB
+        chunk = self._f.read(to_read)
+        if chunk:
+            self._remaining -= len(chunk)
+            if self._on_chunk:
+                self._on_chunk(len(chunk))
+        return chunk
+
+
 def _sanitize_header(v: str) -> str:
     """Strip control/newline characters from header values."""
     if v is None:
@@ -215,7 +244,8 @@ class HeartbeatPoller:
 
         safe_name = urllib.parse.quote(str(item.dest_filename), safe="")
         url = f"http://{self.pi_ip}:{self.pi_port}/api/receive/{safe_name}"
-        self.queue.set_state(item.id, "pushing", push_attempts=item.push_attempts + 1)
+        initial_progress = round(offset / file_size * 100, 1) if file_size > 0 else 0.0
+        self.queue.set_state(item.id, "pushing", push_attempts=item.push_attempts + 1, push_progress=initial_progress)
 
         # Choose number of parallel streams based on remaining data size
         n_streams = min(PARALLEL_STREAMS, max(1, remaining // MIN_PARALLEL_BYTES))
@@ -231,20 +261,17 @@ class HeartbeatPoller:
             with open(path, "rb") as f:
                 f.seek(offset)
 
-                def _gen():
-                    sent = 0
-                    while True:
-                        chunk = f.read(STREAM_CHUNK)
-                        if not chunk:
-                            break
-                        sent += len(chunk)
-                        progress = round((offset + sent) / file_size * 100, 1)
-                        self.queue.update_push_progress(item.id, progress)
-                        yield chunk
+                sent = [0]
+
+                def _on_chunk(n: int):
+                    sent[0] += n
+                    self.queue.update_push_progress(
+                        item.id, round((offset + sent[0]) / file_size * 100, 1)
+                    )
 
                 resp = requests.put(
                     url,
-                    data=_gen(),
+                    data=_SegmentReader(f, file_size - offset, _on_chunk),
                     headers={
                         "Content-Range": f"bytes {offset}-{file_size - 1}/{file_size}",
                         "Content-Length": str(file_size - offset),
@@ -312,23 +339,16 @@ class HeartbeatPoller:
                 with open(path, "rb") as f:
                     f.seek(seg_start)
 
-                    def _gen():
-                        remaining_seg = seg_len
-                        while remaining_seg > 0:
-                            chunk = f.read(min(STREAM_CHUNK, remaining_seg))
-                            if not chunk:
-                                break
-                            remaining_seg -= len(chunk)
-                            seg_sent[0] += len(chunk)
-                            with sent_lock:
-                                total_sent[0] += len(chunk)
-                                progress = round((offset + total_sent[0]) / file_size * 100, 1)
-                            self.queue.update_push_progress(item.id, progress)
-                            yield chunk
+                    def _on_chunk(n: int):
+                        seg_sent[0] += n
+                        with sent_lock:
+                            total_sent[0] += n
+                            progress = round((offset + total_sent[0]) / file_size * 100, 1)
+                        self.queue.update_push_progress(item.id, progress)
 
                     resp = requests.put(
                         url,
-                        data=_gen(),
+                        data=_SegmentReader(f, seg_len, _on_chunk),
                         headers={
                             "Content-Range": f"bytes {seg_start}-{seg_end - 1}/{file_size}",
                             "Content-Length": str(seg_len),
