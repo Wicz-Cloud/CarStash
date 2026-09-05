@@ -130,7 +130,7 @@ jobs:
       # Optional: push to Codecov if you add CODECOV_TOKEN to repo secrets
       - name: Upload to Codecov
         if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.xml
           fail_ci_if_error: false
