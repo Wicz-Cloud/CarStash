@@ -37,9 +37,10 @@ def _is_valid_mp4(path: str) -> bool:
         return True  # can't check — assume valid
     try:
         result = subprocess.run(
-            [ffprobe, "-v", "error", "-show_entries", "format=duration",
-             "-of", "default", path],
-            capture_output=True, text=True, timeout=15,
+            [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default", path],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         return result.returncode == 0 and "duration" in result.stdout
     except Exception:
@@ -112,7 +113,10 @@ class TranscodeWorker:
                 logger.info(f"[{item.id}] Cache hit: {cached}")
                 return cached
             else:
-                logger.warning(f"[{item.id}] Cached file is corrupt (moov atom missing) — deleting and re-transcoding: {cached}")
+                logger.warning(
+                    f"[{item.id}] Cached file is corrupt (moov atom missing) — "
+                    f"deleting and re-transcoding: {cached}"
+                )
                 os.remove(cached)
 
         if not os.path.exists(item.source_path):
@@ -123,7 +127,7 @@ class TranscodeWorker:
         result = [None]
 
         def on_progress(job):
-            if hasattr(job, 'progress'):
+            if hasattr(job, "progress"):
                 self.queue.set_state(item.id, "transcoding", transcode_progress=round(job.progress, 1))
             if job.status in ("done", "skipped", "error", "cancelled"):
                 result[0] = job

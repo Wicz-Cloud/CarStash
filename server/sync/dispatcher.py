@@ -68,7 +68,7 @@ class _SegmentReader:
 
     def __init__(self, f, limit: int, on_chunk=None):
         self._f = f
-        self._limit = limit       # immutable — returned by __len__
+        self._limit = limit  # immutable — returned by __len__
         self._remaining = limit
         self._on_chunk = on_chunk
         self._since_callback = 0  # bytes accumulated since last progress report
@@ -141,6 +141,7 @@ class HeartbeatPoller:
 
     def force_poll(self):
         """Trigger an immediate poll cycle (e.g. after a new item is queued)."""
+
         def _run():
             # Non-blocking acquire: if a cycle is already running, skip this one
             if self._cycle_lock.acquire(blocking=False):
@@ -276,9 +277,7 @@ class HeartbeatPoller:
 
                 def _on_chunk(n: int):
                     sent[0] += n
-                    self.queue.update_push_progress(
-                        item.id, round((offset + sent[0]) / file_size * 100, 1)
-                    )
+                    self.queue.update_push_progress(item.id, round((offset + sent[0]) / file_size * 100, 1))
 
                 resp = requests.put(
                     url,
@@ -333,10 +332,7 @@ class HeartbeatPoller:
             segments.append((pos, end))
             pos = end
 
-        logger.info(
-            f"[{item.id}] Parallel push — {n_streams} streams, "
-            f"{remaining / 1e6:.0f} MB remaining"
-        )
+        logger.info(f"[{item.id}] Parallel push — {n_streams} streams, " f"{remaining / 1e6:.0f} MB remaining")
 
         # Shared progress counter — bytes sent in THIS push call (not including prior offset)
         total_sent = [0]
