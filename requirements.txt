@@ -1,5 +1,5 @@
 flask>=3.0
-requests>=2.31
+requests>=2.34.2
 colorlog
 Flask-Cors
 
