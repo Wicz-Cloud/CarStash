@@ -168,8 +168,8 @@ jobs:
           CARSTASH_MEDIA_DIR: ${{ runner.temp }}/carstash/media
         run: |
           mkdir -p "$CARSTASH_LOG_DIR" "$CARSTASH_MEDIA_DIR"
-          cd server
-          python app.py > /tmp/server.log 2>&1 &
+          # Run as package module so relative imports in server/app.py resolve
+          PYTHONPATH=. python -m server.app > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
           # Give Flask extra time to bind
           sleep 12

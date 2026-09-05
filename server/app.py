@@ -7,9 +7,16 @@ import tempfile
 import time
 from logging.handlers import TimedRotatingFileHandler
 
-from flask import Flask, Response, abort, jsonify, request, stream_with_context
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    request,
+    send_from_directory,
+    stream_with_context,
+)
 from flask_cors import CORS
-from flask import send_from_directory
 
 try:
     from colorlog import ColoredFormatter
@@ -54,6 +61,7 @@ CORS(app)
 
 class _PollingFilter(logging.Filter):
     """Drop noisy high-frequency HTTP access log entries from Werkzeug."""
+
     _BORING = (
         '"GET /api/queue HTTP',
         '"GET /api/system HTTP',
@@ -111,6 +119,7 @@ poller = HeartbeatPoller(
 poller.start()
 worker.start()
 
+
 @app.route("/api/queue", methods=["POST"])
 def add_to_queue():
     """Add a file to the sync queue."""
@@ -128,7 +137,6 @@ def add_to_queue():
     )
     poller.force_poll()
     return jsonify(item.to_dict()), 201
-
 
 
 @app.route("/api/queue/<item_id>", methods=["DELETE"])
@@ -153,6 +161,7 @@ def retry_queue_item(item_id):
     queue.set_state(item_id, new_state, push_attempts=0, error=None)
     poller.force_poll()
     return jsonify({"ok": True, "new_state": new_state}), 200
+
 
 @app.route("/api/browse", methods=["GET"])
 def browse():
@@ -217,7 +226,7 @@ def get_logs():
     try:
         with open(log_path, "r", errors="replace") as f:
             lines = f.readlines()
-        return jsonify({"lines": [_strip_ansi(l.rstrip()) for l in lines[-n:] if l.strip()]})
+        return jsonify({"lines": [_strip_ansi(line.rstrip()) for line in lines[-n:] if line.strip()]})
     except FileNotFoundError:
         return jsonify({"lines": []})
 
@@ -268,13 +277,16 @@ def health():
     """Lightweight liveness probe -- returns 200 as long as the server is up."""
     return jsonify({"status": "ok", "service": "carstash-server"}), 200
 
+
 @app.route("/api/queue", methods=["GET"])
 def list_queue():
     return jsonify([i.to_dict() for i in queue.list_all()])
 
+
 @app.route("/")
 def index():
     return send_from_directory(os.path.dirname(__file__), "carstash.html")
+
 
 if __name__ == "__main__":
     app.run(host=os.environ.get("PLEXSYNC_SERVER_HOST", "127.0.0.1"), port=5000, debug=False)

@@ -53,6 +53,7 @@ def _get_file_lock(name: str) -> threading.Lock:
 
 # ── Segment tracking (meta sidecar) ──────────────────────────────────────────
 
+
 def _meta_path(tmp_path: str) -> str:
     return tmp_path + ".meta"
 
@@ -94,6 +95,8 @@ def _sequential_offset(meta: dict) -> int:
         else:
             break
     return off
+
+
 media_adapter = get_adapter()
 logger.info(f"Media server adapter: [{media_adapter.name}]")
 

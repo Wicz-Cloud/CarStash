@@ -100,16 +100,26 @@ class SyncQueue:
                         if item.state in ("pushing", "transcoding"):
                             item.state = "interrupted" if item.transcoded_path else "queued"
                             item.touch()
-                            logger.info(f"[{item.id}] Reset {d['state']} → {item.state} after restart")
+                            logger.info(f"[{item.id}] Reset {d['state']} → " f"{item.state} after restart")
                         # Transcoded file disappeared (e.g. cache dir cleared) → re-transcode
-                        elif item.state in ("ready", "interrupted") and item.transcoded_path and not os.path.exists(item.transcoded_path):
-                            logger.warning(f"[{item.id}] Transcoded file missing ({item.transcoded_path}) — re-queuing")
+                        elif (
+                            item.state in ("ready", "interrupted")
+                            and item.transcoded_path
+                            and not os.path.exists(item.transcoded_path)
+                        ):
+                            logger.warning(
+                                f"[{item.id}] Transcoded file missing " f"({item.transcoded_path}) — re-queuing"
+                            )
                             item.state = "queued"
                             item.transcoded_path = None
                             item.push_progress = 0.0
                             item.touch()
                         self._items[item.id] = item
-                counts = {s: sum(1 for i in self._items.values() if i.state == s) for s in STATES if any(i.state == s for i in self._items.values())}
+                counts = {
+                    s: sum(1 for i in self._items.values() if i.state == s)
+                    for s in STATES
+                    if any(i.state == s for i in self._items.values())
+                }
                 logger.info(f"Loaded {len(self._items)} queue items — {counts}")
             except Exception as e:
                 logger.error(f"Failed to load queue state: {e}")
